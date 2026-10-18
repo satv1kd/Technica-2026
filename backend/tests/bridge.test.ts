@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_STEP, TAP_MS, plan, waypoints } from "../bridge/serial/planner";
+import { TAP_MS, plan } from "../bridge/serial/planner";
 import { ArmLink, type SerialPortLike } from "../bridge/serial/webserial";
 import { drawOnArm } from "../bridge/serial";
 import type { ChartOps } from "@services/chart/ops";
@@ -23,15 +23,9 @@ describe("planner", () => {
     ]);
   });
 
-  it("splits long stylus-down moves into short straight steps", () => {
-    const cmds = plan(chart([{ op: "stroke", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], style: "solid" }]));
-    const pts = moves(cmds);
-    for (let i = 1; i < pts.length; i++) {
-      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
-      expect(Math.hypot(x1 - x0, y1 - y0)).toBeLessThanOrEqual(MAX_STEP + 1e-3);
-      expect(x1).toBeCloseTo(y1, 3); // stays on the diagonal
-    }
-    expect(pts.at(-1)).toEqual([1, 1]);
+  it("sends one move per chart point, like the on-screen arm's timeline", () => {
+    const cmds = plan(chart([{ op: "stroke", points: [{ x: 0, y: 0 }, { x: 0.5, y: 0.9 }, { x: 1, y: 1 }], style: "solid" }]));
+    expect(moves(cmds)).toEqual([[0, 0], [0.5, 0.9], [1, 1]]);
   });
 
   it("lifts the stylus on every other segment of a dashed line", () => {
@@ -52,10 +46,6 @@ describe("planner", () => {
     expect(cmds).toContain("M 1.000 0.000");
   });
 
-  it("waypoints end exactly on the target", () => {
-    expect(waypoints({ x: 0, y: 0 }, { x: 0.01, y: 0 })).toEqual([{ x: 0.01, y: 0 }]);
-    expect(waypoints({ x: 0, y: 0 }, { x: 0.5, y: 0 })).toHaveLength(10);
-  });
 });
 
 /** A fake ESP32: answers each command line with whatever `reply` returns. */
