@@ -11,6 +11,8 @@ if (fs.existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Browser tests get their own output so a running dev server cannot overwrite it.
+  distDir: process.env.SONAR_NEXT_DIST_DIR || ".next",
   // Lets the app import shared code from ../../services.
   experimental: { externalDir: true },
   // Pin the workspace root so Next ignores lockfiles in parent folders.

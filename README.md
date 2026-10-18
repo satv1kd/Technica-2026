@@ -66,6 +66,15 @@ The full spec is in [.taskmaster/docs/prd.txt](.taskmaster/docs/prd.txt).
 
    Open http://localhost:3000.
 
+Hold **Space** (or the on-screen Space button) for at least 250 ms to record a
+question, then release to send it. **Escape** cancels recording or a pending
+question. Sonar speaks the reply using ElevenLabs, Gemini if ElevenLabs fails,
+or the browser voice if both services are unavailable. Press **R** or **Repeat**
+to replay the cached reply and redraw its chart without another speech API call.
+Press **T** or **Type a question** to type and send with Enter; this input also
+opens when the microphone or transcription is unavailable. Microphone access
+requires localhost or HTTPS and the browser's permission.
+
 If a required key is missing, empty, or still a placeholder, the server refuses to start
 and lists every problem at once:
 

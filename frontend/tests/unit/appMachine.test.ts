@@ -44,3 +44,11 @@ describe("keymap", () => {
     expect(keyDownAction({ key: "q" })).toBeNull();
   });
 });
+
+describe("settling", () => {
+  it("returns to the answer, or to the lesson the trade was part of", () => {
+    expect(transition("settling", { type: "SETTLED" })).toBe("answer");
+    expect(transition("settling", { type: "SETTLED", to: "lesson" })).toBe("lesson");
+    expect(transition("answer", { type: "SETTLED", to: "lesson" })).toBe("answer");
+  });
+});

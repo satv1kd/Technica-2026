@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { installVoiceMocks } from "./voice.fixture";
 
 // Keyboard only, as a blind learner would use it.
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+  await installVoiceMocks(page);
+  // Keep transcription pending while these tests inspect shell transitions.
+  await page.route("**/api/stt", () => {});
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#sonar-live")).toHaveText("Press a number, or space to talk");
   await expect(page.locator("main")).toHaveAttribute("data-state", "menu");
 });
 

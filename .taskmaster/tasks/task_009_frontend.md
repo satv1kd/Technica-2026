@@ -2,7 +2,7 @@
 
 **Title:** Voice I/O: Push-to-Talk, ElevenLabs STT/TTS, and Gemini TTS Fallback
 
-**Status:** in-progress
+**Status:** done
 
 **Dependencies:** 4 ✓
 
