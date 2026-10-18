@@ -13,7 +13,8 @@
 import type { ChartOps, Pt } from "../../services/chart/ops";
 
 export const MAX_PRESSURE = 3;
-export const TAP_MS = 200;
+// Same as the on-screen arm (frontend/web/lib/palm/motion.ts) so they stay in step.
+export const TAP_MS = 180;
 /** Stylus-down moves are split into steps this long (0.05 of 6 cm = 3 mm).
  *  The arm interpolates in joint space, so a long single move would draw an
  *  arc instead of the straight segment shown on screen. */
