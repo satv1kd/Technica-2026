@@ -10,6 +10,10 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts"],
+    // Devnet tests spend real (free) devnet SOL; run them only when asked for by name.
+    exclude: process.argv.some((a) => a.includes("devnet"))
+      ? ["node_modules/**"]
+      : ["tests/**/*.devnet.test.ts", "node_modules/**"],
     environment: "node",
   },
 });

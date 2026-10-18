@@ -249,3 +249,59 @@ def test_tip_flags_frequent_trading():
 def test_tip_flags_selling_after_a_dip():
     trades = [_trade("sell", price="90", meta={"avg_cost": "100"}), _trade(), _trade()]
     assert "locks in the loss" in coaching_tip({}, trades, SATURDAY)
+
+
+# Backing check --------------------------------------------------------------
+
+def _client(desk, ledger):
+    from fastapi.testclient import TestClient
+    from api import Services, create_app
+    svc = Services(FakePrices(PRICES), desk.registry, ledger, desk, clock=desk.clock)
+    return TestClient(create_app(svc))
+
+
+def test_backing_matches_after_onchain_trades():
+    desk, ledger, chain, _ = make_desk()
+    desk.confirm(desk.propose("buy", "PVOO", 2).id)
+    desk.confirm(desk.propose("sell", "PVOO", "0.5").id)
+    with _client(desk, ledger) as client:
+        body = client.get("/backing").json()
+    assert body["matches"] is True
+    assert body["supply"] == body["ledger_onchain"] == 1.5
+    assert body["spoken"].startswith("Supply matches the ledger: 1.5 tokens on chain")
+
+
+def test_backing_reports_simulated_trades_separately():
+    chain = FakeChain()
+    desk, ledger, _, _ = make_desk(chain=chain)
+    desk.confirm(desk.propose("buy", "PVOO", 1).id)
+    chain.fail = True
+    desk.confirm(desk.propose("buy", "PVOO", 2).id)  # simulated
+    chain.fail = False
+    with _client(desk, ledger) as client:
+        body = client.get("/backing").json()
+    assert body["matches"] is True
+    assert body["ledger_simulated"] == 2
+    assert "simulated while devnet was down" in body["spoken"]
+
+
+def test_backing_when_chain_is_down():
+    desk, ledger, chain, _ = make_desk()
+    chain.fail = True
+    with _client(desk, ledger) as client:
+        r = client.get("/backing")
+    assert r.status_code == 503
+
+
+def test_simulated_settlement_carries_an_earlier_explorer_link():
+    from markets.pvoo import ChainUnavailable
+
+    class Down(FakeChain):
+        def mint(self, amount):
+            raise ChainUnavailable("down", "https://explorer.solana.com/tx/old?cluster=devnet")
+
+    desk, *_ = make_desk(chain=Down())
+    result = desk.confirm(desk.propose("buy", "PVOO", 1).id)
+    assert result.settlement.kind == "simulated"
+    assert result.settlement.extra["example_explorer"].endswith("old?cluster=devnet")
+    assert "earlier PVOO trade" in result.settlement.note

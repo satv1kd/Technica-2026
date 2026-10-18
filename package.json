@@ -13,13 +13,21 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx --env-file-if-exists=.env services/data/migrate.ts",
     "db:refresh": "tsx --env-file-if-exists=.env services/data/migrate.ts --refresh",
-    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/db.integration.test.ts"
+    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/db.integration.test.ts",
+    "test:e2e": "playwright test",
+    "chain": "tsx --env-file-if-exists=.env services/chain/server.ts",
+    "chain:setup": "tsx --env-file-if-exists=.env services/chain/setup.ts",
+    "test:devnet": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/chain.devnet.test.ts"
   },
   "dependencies": {
+    "@solana/spl-token": "^0.4.9",
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0",
     "pg": "^8.23.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",

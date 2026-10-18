@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { repoPath } from "../paths";
 import { lessonSchema, type Lesson } from "./schema";
 
-const CONTENT_DIR = path.join(__dirname, "content");
+const CONTENT_DIR = () => repoPath("services", "lessons", "content");
 
 /** Load and validate every lesson file; throws with the file name on a bad one. */
-export function loadCurriculum(dir: string = CONTENT_DIR): Lesson[] {
+export function loadCurriculum(dir: string = CONTENT_DIR()): Lesson[] {
   return fs
     .readdirSync(dir)
     .filter((f) => f.endsWith(".json"))

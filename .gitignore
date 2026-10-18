@@ -35,3 +35,9 @@ coverage/
 .venv/
 __pycache__/
 .pytest_cache/
+
+# Playwright
+test-results/
+playwright-report/
+data/ingest_state.json
+data/tts-cache/

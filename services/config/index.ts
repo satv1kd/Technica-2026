@@ -24,7 +24,7 @@ const optionalSchema = z.object({
   DATABASE_PASSWORD: z.string().optional(),
   ALPACA_KEY_ID: z.string().optional(),
   ALPACA_SECRET_KEY: z.string().optional(),
-  ELEVENLABS_VOICE_ID: z.string().min(1).default("21m00Tcm4TlvDq8ikWAM"),
+  ELEVENLABS_VOICE_ID: z.string().min(1).default("EXAVITQu4vr4xnSDxMaL"),
   GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
   SOLANA_RPC_URL: z.string().url().default("https://api.devnet.solana.com"),
   SOLANA_PAYER_SECRET_KEY: z.string().optional(),

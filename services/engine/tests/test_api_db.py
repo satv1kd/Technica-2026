@@ -234,3 +234,23 @@ def test_review_lists_trades_newest_first(env):
     assert len(trades) >= 3
     times = [t["time"] for t in trades]
     assert times == sorted(times, reverse=True)
+
+
+def test_chart_endpoint_on_real_prices(env):
+    client, *_ = env
+    body = client.get("/chart", params={"symbols": "AAPL", "range": "1m"}).json()
+    [s] = body["series"]
+    assert len(s["points"]) == 12
+    assert s["smoothing"] == "sma5"
+    assert s["summary"]["direction"] in ("up", "down", "barely moved")
+    assert all(0 <= p["y"] <= 1 for p in s["points"])
+
+
+def test_chart_compare_shares_one_scale(env):
+    client, *_ = env
+    body = client.get("/chart", params={"symbols": "AAPL,VOO", "range": "6m", "points": 14}).json()
+    a, v = body["series"]
+    assert len(a["points"]) == len(v["points"]) == 14
+    ys = [p["y"] for p in a["points"] + v["points"]]
+    assert min(ys) == 0 and max(ys) == 1
+    assert v["smoothing"] == "sma20"

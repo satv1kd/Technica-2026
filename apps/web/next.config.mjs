@@ -1,10 +1,13 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import nextEnv from "@next/env";
 
 // Keys live in one .env at the repo root, shared by every service.
+// Next only reads .env from apps/web, and @next/env caches the first folder it
+// loads, so load the root file with Node directly. Existing variables win.
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-nextEnv.loadEnvConfig(repoRoot);
+const rootEnv = path.join(repoRoot, ".env");
+if (fs.existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

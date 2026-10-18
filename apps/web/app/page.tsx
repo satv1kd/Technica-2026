@@ -74,7 +74,7 @@ export default function Home() {
   }, [state]);
 
   return (
-    <main className="shell">
+    <main className="shell" data-state={state}>
       <AuroraBackground listening={state === "listening"} />
       <h1 className="heading">{HEADINGS[state]}</h1>
       <button

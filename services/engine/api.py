@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field
 from backtest import NotEnoughHistory, backtest
 from ledger import InsufficientFunds, InsufficientShares, LedgerStore, TradeRecord
 from markets import MarketRegistry, NoPriceData, UnknownSymbol
+from markets.pvoo import ChainUnavailable
 from portfolio import STARTING_CASH, summarize
+from series import MAX_POINTS, MIN_POINTS, chart_series
 from prices import PriceSource, UnknownRange, market_open, price_note, range_start
 from trades import InvalidOrder, NoProposal, Proposal, ProposalExpired, TradeDesk, utcnow
 
@@ -39,11 +41,13 @@ def build_services() -> Services:
     from ledger import Ledger
     from markets import default_registry
     from markets.pvoo import HttpChainClient
+    from fallback import CsvPriceSource, FallbackPriceSource
     from prices import PriceStore
 
     settings = load_settings()
     pool = make_pool(settings)
-    prices = PriceStore(pool)
+    # Quotes, history, and backtests keep working from CSV if the database drops.
+    prices = FallbackPriceSource(PriceStore(pool), CsvPriceSource())
     registry = default_registry(prices, HttpChainClient(settings.chain_url))
     ledger = Ledger(pool, resolve_account(pool, settings.account_id))
     return Services(prices, registry, ledger, TradeDesk(registry, ledger), close=pool.close)
@@ -167,6 +171,49 @@ def create_app(services: Services | None = None) -> FastAPI:
             "points": [{"date": c.day.isoformat(), "close": money(c.close)} for c in closes],
         }
 
+    @app.get("/chart")
+    def chart(
+        request: Request,
+        symbols: str,
+        range: str = Query("1m"),
+        points: int = Query(12, ge=MIN_POINTS, le=MAX_POINTS),
+    ):
+        """Palm-ready drawing. Pass two symbols (AAPL,VOO) to compare on one scale."""
+        s = svc(request)
+        names = [x.strip().upper() for x in symbols.split(",") if x.strip()][:2]
+        data = {}
+        for name in names:
+            market = s.registry.market(name)
+            source = "VOO" if market.asset_class == "tokenized" else name
+            latest = s.prices.latest(source)
+            if latest is None:
+                raise NoPriceData(f"No stored prices for {source}.")
+            closes = s.prices.closes(source, range_start(range, latest.day))
+            data[name] = [(c.day, c.close) for c in closes]
+        series_list, (lo, hi) = chart_series(data, range, points)
+        return {
+            "range": range,
+            "scale": {"low": lo, "high": hi},
+            "series": [
+                {
+                    "symbol": x.symbol,
+                    "smoothing": f"sma{x.smooth_window}" if x.smooth_window > 1 else "none",
+                    "points": [{"x": p.x, "y": p.y, "date": p.day.isoformat(), "value": p.value}
+                               for p in x.points],
+                    "markers": x.markers,
+                    "summary": {
+                        "direction": x.direction,
+                        "pct_change": round(x.pct_change, 1),
+                        "first_close": round(x.first_close, 2),
+                        "last_close": round(x.last_close, 2),
+                        "raw_peak": {"date": x.raw_peak[0].isoformat(), "close": round(x.raw_peak[1], 2)},
+                        "raw_trough": {"date": x.raw_trough[0].isoformat(), "close": round(x.raw_trough[1], 2)},
+                    },
+                }
+                for x in series_list
+            ],
+        }
+
     @app.post("/propose")
     def propose(request: Request, body: ProposeBody):
         return proposal_json(svc(request).desk.propose(body.side, body.symbol, body.qty))
@@ -230,6 +277,34 @@ def create_app(services: Services | None = None) -> FastAPI:
             "drawdown_peak_date": r.drawdown_peak_date.isoformat(),
             "drawdown_trough_date": r.drawdown_trough_date.isoformat(),
             "note": "This shows what happened in the past, not what will happen.",
+        }
+
+    @app.get("/backing")
+    def backing(request: Request):
+        """Is every PVOO on Sonar's ledger backed by a token on chain?"""
+        s = svc(request)
+        market = s.registry.market("PVOO")
+        onchain_ledger, simulated = s.ledger.token_totals("PVOO")
+        try:
+            supply = market.chain.supply()
+        except ChainUnavailable as exc:
+            return JSONResponse(status_code=503, content={
+                "error": "chain_unavailable", "message": str(exc),
+                "ledger_onchain": num(onchain_ledger), "ledger_simulated": num(simulated),
+            })
+        matches = supply == onchain_ledger
+        if matches:
+            spoken = (f"Supply matches the ledger: {supply.normalize():f} tokens on chain, "
+                      f"{onchain_ledger.normalize():f} on Sonar's ledger.")
+        else:
+            spoken = (f"Warning: {supply.normalize():f} tokens on chain, "
+                      f"but the ledger says {onchain_ledger.normalize():f}.")
+        if simulated:
+            spoken += (f" Another {simulated.normalize():f} PVOO were simulated while devnet "
+                       f"was down, so they are not on chain.")
+        return {
+            "supply": num(supply), "ledger_onchain": num(onchain_ledger),
+            "ledger_simulated": num(simulated), "matches": matches, "spoken": spoken,
         }
 
     @app.get("/review")

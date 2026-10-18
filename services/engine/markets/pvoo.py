@@ -21,6 +21,15 @@ CHAIN_TIMEOUT_S = 8.0
 class ChainClient(Protocol):
     def mint(self, amount: Decimal) -> str: ...
     def burn(self, amount: Decimal) -> str: ...
+    def supply(self) -> Decimal: ...
+
+
+class ChainUnavailable(RuntimeError):
+    """Devnet failed. Carries the last good Explorer link, if the service had one."""
+
+    def __init__(self, message: str, example_explorer: str | None = None):
+        super().__init__(message)
+        self.example_explorer = example_explorer
 
 
 class HttpChainClient:
@@ -31,7 +40,13 @@ class HttpChainClient:
         self.timeout = timeout
 
     def _call(self, op: str, amount: Decimal) -> str:
-        r = httpx.post(f"{self.base_url}/{op}", json={"amount": str(amount)}, timeout=self.timeout)
+        try:
+            r = httpx.post(f"{self.base_url}/{op}", json={"amount": str(amount)}, timeout=self.timeout)
+        except httpx.HTTPError as exc:
+            raise ChainUnavailable(f"Chain service unreachable: {exc}") from exc
+        if r.status_code == 503:
+            body = r.json()
+            raise ChainUnavailable(body.get("message", "devnet unavailable"), body.get("example_explorer"))
         r.raise_for_status()
         return r.json()["signature"]
 
@@ -40,6 +55,14 @@ class HttpChainClient:
 
     def burn(self, amount: Decimal) -> str:
         return self._call("burn", amount)
+
+    def supply(self) -> Decimal:
+        try:
+            r = httpx.get(f"{self.base_url}/supply", timeout=self.timeout)
+            r.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ChainUnavailable(f"Could not read PVOO supply: {exc}") from exc
+        return Decimal(r.json()["supply"])
 
 
 def explorer_link(signature: str) -> str:
@@ -71,13 +94,18 @@ class PvooMarket(Market):
         try:
             signature = op(fill.quantity)
         except Exception as exc:  # network error, timeout, chain service down
+            example = getattr(exc, "example_explorer", None)
+            extra = {"error": type(exc).__name__}
+            if example:
+                extra["example_explorer"] = example
             return Settlement(
                 kind="simulated",
                 note=(
                     "Solana devnet didn't answer in time, so this trade was recorded on "
                     "Sonar's ledger only, as a simulated settlement."
+                    + (" Here's an earlier PVOO trade on the Explorer as an example." if example else "")
                 ),
-                extra={"error": type(exc).__name__},
+                extra=extra,
             )
         ms = int((time.perf_counter() - started) * 1000)
         return Settlement(

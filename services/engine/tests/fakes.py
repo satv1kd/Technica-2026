@@ -69,11 +69,31 @@ class FakeLedger:
     def trades(self, limit=50):
         return self._trades[:limit]
 
+    def token_totals(self, symbol):
+        onchain = simulated = Decimal(0)
+        for t in self._trades:
+            if t.symbol != symbol:
+                continue
+            s = self.settlements.get(t.id)
+            signed = t.quantity if t.side == "buy" else -t.quantity
+            if s and s.kind == "onchain":
+                onchain += signed
+            elif s and s.kind == "simulated":
+                simulated += signed
+        return onchain, simulated
+
 
 class FakeChain:
     def __init__(self, fail=False):
         self.fail = fail
         self.calls: list[tuple[str, Decimal]] = []
+        self.total = Decimal(0)
+
+    def supply(self):
+        if self.fail:
+            from markets.pvoo import ChainUnavailable
+            raise ChainUnavailable("devnet down")
+        return self.total
 
     def mint(self, amount):
         return self._op("mint", amount)
@@ -85,6 +105,7 @@ class FakeChain:
         if self.fail:
             raise TimeoutError("devnet down")
         self.calls.append((op, amount))
+        self.total += amount if op == "mint" else -amount
         return f"sig-{op}-{len(self.calls)}"
 
 

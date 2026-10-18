@@ -8,13 +8,16 @@ export type AppState =
   | "confirm"
   | "settling";
 
+export type ReplyKind = "answer" | "lesson" | "quiz" | "confirm" | "settling" | "menu";
+
 export type AppEvent =
   | { type: "TALK_START" }
   | { type: "TALK_END"; heldMs: number }
   | { type: "TALK_CANCEL" }
+  | { type: "THINK" }
   | { type: "MENU" }
   | { type: "BACK" }
-  | { type: "REPLY_READY"; kind: "answer" | "lesson" | "quiz" | "confirm" }
+  | { type: "REPLY_READY"; kind: ReplyKind }
   | { type: "NEXT" }
   | { type: "PREV" }
   | { type: "CONFIRM" }
@@ -34,15 +37,16 @@ export function transition(state: AppState, event: AppEvent): AppState {
       return event.heldMs >= MIN_HOLD_MS ? "thinking" : "menu";
     case "TALK_CANCEL":
       return state === "listening" ? "menu" : state;
+    case "THINK":
+      return state === "settling" ? state : "thinking";
     case "MENU":
     case "BACK":
       return state === "settling" ? state : "menu";
     case "REPLY_READY":
       return state === "thinking" ? event.kind : state;
     case "NEXT":
-      return state === "lesson" ? "lesson" : state;
     case "PREV":
-      return state === "lesson" ? "lesson" : state;
+      return state;
     case "CONFIRM":
       return state === "confirm" ? "settling" : state;
     case "CANCEL":

@@ -13,10 +13,11 @@ const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const SYMBOL = "TEST_SONAR";
 
 describe.skipIf(!url)("TimescaleDB schema", () => {
-  const client = newClient(url!);
+  let client: ReturnType<typeof newClient>;
   let accountId: string;
 
   beforeAll(async () => {
+    client = newClient(url!);
     await client.connect();
     await migrate(client);
     // Running twice proves the migration is idempotent.

@@ -64,6 +64,7 @@ class LedgerStore(Protocol):
     def apply(self, fill: Fill, trade_id: str, metadata: dict) -> TradeRecord: ...
     def record_settlement(self, trade: TradeRecord, settlement: Settlement) -> None: ...
     def trades(self, limit: int = 50) -> list[TradeRecord]: ...
+    def token_totals(self, symbol: str) -> tuple[Decimal, Decimal]: ...
 
 
 class Ledger:
@@ -176,6 +177,21 @@ class Ledger:
                 (self.account_id, limit),
             ).fetchall()
         return [TradeRecord(*r) for r in rows]
+
+    def token_totals(self, symbol: str) -> tuple[Decimal, Decimal]:
+        """Net tokens across ALL accounts: (settled on chain, simulated only).
+        On-chain supply should equal the first number exactly."""
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """SELECT
+                     COALESCE(SUM(CASE WHEN settlement = 'onchain'
+                       THEN CASE side WHEN 'buy' THEN quantity ELSE -quantity END END), 0),
+                     COALESCE(SUM(CASE WHEN settlement = 'simulated'
+                       THEN CASE side WHEN 'buy' THEN quantity ELSE -quantity END END), 0)
+                   FROM trades WHERE symbol = %s""",
+                (symbol,),
+            ).fetchone()
+        return Decimal(row[0]), Decimal(row[1])
 
     def _cash(self, conn) -> Decimal:
         return Decimal(

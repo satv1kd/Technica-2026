@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
+import { repoPath } from "../paths";
 
 /**
  * Tiger Data (Timescale Cloud) signs its server certificates with a private
  * CA, ca.timescale.com, that no OS trusts. We pin that CA so connections stay
  * fully verified (chain + hostname) instead of turning verification off.
  */
-const TIMESCALE_CA = path.join(__dirname, "certs", "timescale-ca.pem");
+const TIMESCALE_CA = () => repoPath("services", "data", "certs", "timescale-ca.pem");
 const TIMESCALE_HOST = /\.tsdb\.cloud\.timescale\.com$/;
 
 /**
@@ -26,7 +27,7 @@ export function pgOptions(
   if (TIMESCALE_HOST.test(url.hostname)) {
     return {
       connectionString: url.toString(),
-      ssl: { ca: fs.readFileSync(TIMESCALE_CA, "utf8"), rejectUnauthorized: true },
+      ssl: { ca: fs.readFileSync(TIMESCALE_CA(), "utf8"), rejectUnauthorized: true },
     };
   }
   // Local databases (Docker) usually have no TLS; keep the URL as given.
