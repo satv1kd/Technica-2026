@@ -7,6 +7,7 @@ columns as the prices table. Refresh them with `python export_fallback.py`.
 import csv
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,3 +74,23 @@ class FallbackPriceSource:
 
     def closes(self, symbol: str, start: date) -> list[Close]:
         return self._try("closes", symbol, start)
+
+
+class DatabaseUnavailable(RuntimeError):
+    def __init__(self):
+        super().__init__("The practice account is offline because the database can't be reached. "
+                         "Prices still work from the backup files.")
+
+
+class OfflineLedger:
+    """Stands in for the ledger when the engine starts without a database.
+    Quotes, charts, and backtests still work; anything touching the account
+    raises DatabaseUnavailable, which the API turns into a 503."""
+
+    def _down(self, *_args, **_kwargs):
+        raise DatabaseUnavailable()
+
+    cash = position = positions = apply = record_settlement = trades = _down
+
+    def token_totals(self, symbol: str) -> tuple[Decimal, Decimal]:
+        self._down()

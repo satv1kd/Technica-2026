@@ -61,6 +61,17 @@ class Market(ABC):
     def describe(self, symbol: str) -> dict:
         return {"symbol": symbol, "asset_class": self.asset_class, "fractional": self.fractional}
 
+    # Markets with on-demand symbols (option contracts) override these three.
+    def handles(self, symbol: str) -> bool:
+        return symbol in self.symbols
+
+    def describe_all(self) -> list[dict]:
+        return [self.describe(s) for s in self.symbols]
+
+    def order_text(self, fill: Fill) -> str | None:
+        """How the read-back names the order, if not "N shares of SYMBOL at P dollars each"."""
+        return None
+
 
 class UnknownSymbol(KeyError):
     def __init__(self, symbol: str):
@@ -77,6 +88,7 @@ class NoPriceData(LookupError):
 
 class MarketRegistry:
     def __init__(self, markets: list[Market]):
+        self._markets = markets
         self._by_symbol: dict[str, Market] = {}
         for m in markets:
             for s in m.symbols:
@@ -85,13 +97,16 @@ class MarketRegistry:
                 self._by_symbol[s] = m
 
     def market(self, symbol: str) -> Market:
-        try:
-            return self._by_symbol[symbol.upper()]
-        except KeyError:
-            raise UnknownSymbol(symbol.upper()) from None
+        sym = symbol.upper()
+        if sym in self._by_symbol:
+            return self._by_symbol[sym]
+        for m in self._markets:
+            if m.handles(sym):
+                return m
+        raise UnknownSymbol(sym)
 
     def symbols(self) -> list[str]:
         return list(self._by_symbol)
 
     def describe(self) -> list[dict]:
-        return [m.describe(s) for s, m in self._by_symbol.items()]
+        return [d for m in self._markets for d in m.describe_all()]

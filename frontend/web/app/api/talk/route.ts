@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GeminiError } from "../../../../../backend/services/tutor/gemini";
+import { LlmError } from "../../../../../backend/services/tutor/llm";
 import { runTurn } from "../../../../../backend/services/tutor/loop";
 import { tutor } from "../../../../../backend/services/tutor/server";
 
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     const e = err as Error;
     console.warn(`[talk] ${e.message}`);
     const reply =
-      e instanceof GeminiError
+      e instanceof LlmError
         ? "My thinking service isn't available right now. You can still use the menu: press M."
         : "Something went wrong on my side. Please try again.";
     return NextResponse.json({ reply, directives: [], state, history, tools: [], error: e.message }, { status: 200 });

@@ -11,7 +11,7 @@ The full spec is in [.taskmaster/docs/prd.txt](.taskmaster/docs/prd.txt).
 
 - Node.js 20 or newer
 - A Tiger Data (Postgres + TimescaleDB) database
-- API keys for Gemini and ElevenLabs
+- API keys for OpenAI (the Codex tutor model) and ElevenLabs
 
 ## Setup
 
@@ -31,12 +31,12 @@ The full spec is in [.taskmaster/docs/prd.txt](.taskmaster/docs/prd.txt).
 
    | Key | Required | Where to get it |
    | --- | --- | --- |
-   | `GEMINI_API_KEY` | yes | https://aistudio.google.com/apikey |
+   | `CODEX_API_KEY` (or `OPENAI_API_KEY`) | yes | https://platform.openai.com/api-keys; runs the tutor (`gpt-5.3-codex`) and the fallback voice |
    | `ELEVENLABS_API_KEY` | yes | ElevenLabs dashboard, under API keys |
    | `DATABASE_URL` | yes | Tiger Data console; must start with `postgres://` or `postgresql://` |
-   | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | no | Alpaca paper trading; without them, prices come from `data/fallback/*.csv` |
+   | `ALPACA_KEY_ID` (or `ALPACA_API_KEY`), `ALPACA_SECRET_KEY` | no | Alpaca paper trading; without them, prices come from `data/fallback/*.csv` |
    | `SOLANA_PAYER_SECRET_KEY` | no | A devnet keypair; without it, PVOO trades use ledger-only settlement |
-   | `SOLANA_RPC_URL`, `ENGINE_URL`, `CHAIN_URL`, `GEMINI_MODEL`, `ELEVENLABS_VOICE_ID` | no | Defaults are in `.env.example` |
+   | `SOLANA_RPC_URL`, `ENGINE_URL`, `CHAIN_URL`, `CODEX_MODEL`, `CODEX_REASONING`, `ELEVENLABS_VOICE_ID` | no | Defaults are in `.env.example` |
 
 4. Create the database schema. The script is idempotent, so you can rerun it after pulling schema changes. It only needs `DATABASE_URL`.
 
@@ -71,7 +71,7 @@ and lists every problem at once:
 
 ```
 Sonar configuration error:
-  - GEMINI_API_KEY is missing
+  - CODEX_API_KEY is missing
   - DATABASE_URL must be a postgres:// or postgresql:// connection string
 Copy .env.example to .env at the repo root and fill these in.
 ```
@@ -91,7 +91,8 @@ py -3.13 -m venv .venv
 
 | Endpoint | What it does |
 | --- | --- |
-| `GET /markets` | Tradable assets: VOO, SPY, QQQ, AAPL, MSFT, NVDA, PVOO |
+| `GET /health` | Market hours, and whether prices come from the database or the CSV backup |
+| `GET /markets` | Tradable assets: VOO, SPY, QQQ, AAPL, MSFT, NVDA, PVOO, and options on the six equities |
 | `GET /quote?symbol=VOO` | Last close, plus a spoken note when the market is closed |
 | `GET /history?symbol=AAPL&range=1m` | Daily closes (`1w`, `1m`, `3m`, `6m`, `1y`, `2y`, or a date) |
 | `POST /propose` `{side, symbol, qty}` | Step 1: price, total, risk note, and a read-back. Changes nothing. |
@@ -100,6 +101,7 @@ py -3.13 -m venv .venv
 | `GET /portfolio` | Cash, holdings, gain or loss, and a coaching tip every 3 trades |
 | `POST /backtest` `{symbol, amount, start}` | End value, return, and maximum drawdown with dates |
 | `GET /review` | Trade history, newest first |
+| `GET /options/quote?underlying=AAPL&type=call&strike=350&expiry=2026-11-20` | Contract cost, break-even, max loss and gain, profit at expiry (or pass `symbol=AAPL-C-350-20261120`) |
 
 Rules the engine enforces:
 - Nothing trades without `/confirm`, and a proposal executes at most once.
@@ -107,6 +109,8 @@ Rules the engine enforces:
 - Stocks and ETFs trade in whole shares. PVOO allows fractions (up to 6 decimals).
 - PVOO is priced 1:1 with VOO. If the chain service at `CHAIN_URL` doesn't answer within 8 seconds, the trade still fills and is marked `simulated`.
 - Prices fill in whole cents, and weekend quotes say they are Friday's close.
+- Options are whole contracts of 100 shares, priced with Black-Scholes from each stock's own volatility over the past year. Learners can buy contracts or sell ones they own, never write them, so the most they can lose is what they paid.
+- If the database is unreachable at startup, the engine still starts: quotes, charts, and backtests come from the CSV backup, and account endpoints return `503 database_unavailable`.
 - By default it trades on the "Demo learner" account. Set `ENGINE_ACCOUNT_ID` to use another.
 
 Tests (the API tests run against the database on a throwaway account and clean up after themselves):
@@ -132,6 +136,8 @@ cd backend/services/engine
 | `npm run test:db` | Database integration tests (uses `TEST_DATABASE_URL`, else `DATABASE_URL`) |
 | `npm run chain:setup` / `npm run chain` | One-time PVOO devnet setup / run the chain service |
 | `npm run test:devnet` | PVOO tests on Solana devnet (needs funded devnet SOL) |
+| `npm run test:live` | Tutor tests against the real Codex model and a running engine (uses API quota) |
+| `npm run test:firmware` | Palm-arm IK, motion, and protocol tests, compiled for your computer (needs a C++ compiler) |
 
 ## Repository layout
 
@@ -151,15 +157,15 @@ frontend/                      Frontend team
 
 backend/                       Backend team
   services/engine/             Python: practice brokerage, ingest, chart series, CSV fallback
-  services/tutor/              Gemini loop, 16 tools, guardrails, speech style
+  services/tutor/              Codex (OpenAI Responses API) loop, 18 tools, guardrails, speech style
   services/lessons/            Curriculum JSON, step player, quiz, progress
   services/chain/              PVOO mint, burn, and supply on Solana devnet
-  services/voice/              ElevenLabs STT and TTS with Gemini fallback and cache
+  services/voice/              ElevenLabs STT and TTS with OpenAI TTS fallback and cache
   services/data/               Tiger Data schema, migrations, DB connection
   services/config/             Environment validation
   bridge/serial/               Arm path planner and Web Serial link
-  firmware/                    ESP32 palm-arm firmware
-  tests/                       Unit, database, and devnet tests
+  firmware/palm_arm/           ESP32 palm-arm firmware (see its README)
+  tests/                       Unit, database, devnet, and live tests
 
 data/                          Shared: CSV price fallback (tts-cache is gitignored)
 ```

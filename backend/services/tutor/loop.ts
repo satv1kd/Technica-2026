@@ -1,17 +1,17 @@
 /**
  * The tutor brain: one learner turn in, one spoken reply plus UI directives out.
  *
- * - runTurn: free-form speech or text. Gemini picks tools (up to 5 rounds),
+ * - runTurn: free-form speech or text. The model (OpenAI Codex) picks tools (up to 5 rounds),
  *   then the reply passes the guardrails and the speech-style filter.
  * - runAction: direct UI actions (Enter to confirm, N/P, quiz keys, menu picks)
- *   that need no model, so they're instant and work even if Gemini is down.
+ *   that need no model, so they're instant and work even if the model is down.
  */
 import fs from "node:fs";
 import { repoPath } from "../paths";
 import type { Lesson } from "../lessons/schema";
 import type { ProgressStore } from "../lessons/progress";
 import { EngineError, type EngineFetch } from "./engine";
-import { callsOf, textOf, type Content, type Generate, type Part } from "./gemini";
+import { callsOf, textOf, type Content, type Generate, type Part } from "./llm";
 import {
   ADVICE_REQUEST,
   NO_ADVICE,
@@ -108,7 +108,7 @@ export async function runTurn(
       const entry = await execute(tool, call.name, call.args ?? {}, ctx);
       toolLog.push(entry);
       const forModel = entry.error ? { error: entry.error } : tool?.forModel ? tool.forModel(entry.result) : entry.result;
-      responses.push({ functionResponse: { name: call.name, response: { result: forModel } } });
+      responses.push({ functionResponse: { id: call.id, name: call.name, response: { result: forModel } } });
     }
     contents.push({ role: "user", parts: responses });
     if (ctx.verbatim) break; // lesson narration is spoken word for word
@@ -121,7 +121,7 @@ export async function runTurn(
 
   if (!text) {
     // Out of tool rounds: ask for words only.
-    const { parts } = await deps.generate({ system: SYSTEM_PROMPT, contents });
+    const { parts } = await deps.generate({ system: SYSTEM_PROMPT, contents, tools: decls, toolChoice: "none" });
     text = textOf(parts);
     contents.push({ role: "model", parts: [{ text }] });
   }
@@ -132,6 +132,8 @@ export async function runTurn(
     deps.log?.(`[guardrail] blocked: ${check.reasons.join("; ")} :: ${text}`);
     const { parts } = await deps.generate({
       system: SYSTEM_PROMPT,
+      tools: decls,
+      toolChoice: "none",
       contents: [
         ...contents,
         {

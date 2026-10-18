@@ -1,10 +1,11 @@
 """Sonar trading engine: a practice brokerage over REST.
 
-Knows nothing about Gemini, voice, or the arm. Run from services/engine:
+Knows nothing about the tutor model, voice, or the arm. Run from services/engine:
 
     .venv/Scripts/python -m uvicorn api:app --port 8000
 """
 
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -16,13 +17,17 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backtest import NotEnoughHistory, backtest
+from fallback import DB_DOWN, CsvPriceSource, DatabaseUnavailable, FallbackPriceSource, OfflineLedger
 from ledger import InsufficientFunds, InsufficientShares, LedgerStore, TradeRecord
 from markets import MarketRegistry, NoPriceData, UnknownSymbol
+from markets.options import InvalidContract, MULTIPLIER, contract_symbol
 from markets.pvoo import ChainUnavailable
 from portfolio import STARTING_CASH, summarize
 from series import MAX_POINTS, MIN_POINTS, chart_series
 from prices import PriceSource, UnknownRange, market_open, price_note, range_start
 from trades import InvalidOrder, NoProposal, Proposal, ProposalExpired, TradeDesk, utcnow
+
+log = logging.getLogger("sonar.engine")
 
 
 @dataclass
@@ -33,6 +38,18 @@ class Services:
     desk: TradeDesk
     clock: Callable[[], datetime] = utcnow
     close: Callable[[], None] = lambda: None
+    # True when the engine started without a database: prices come from CSV
+    # and the account endpoints answer 503.
+    offline: bool = False
+
+
+def offline_services(chain) -> Services:
+    from markets import default_registry
+
+    prices = CsvPriceSource()
+    registry = default_registry(prices, chain)
+    ledger = OfflineLedger()
+    return Services(prices, registry, ledger, TradeDesk(registry, ledger), offline=True)
 
 
 def build_services() -> Services:
@@ -41,15 +58,25 @@ def build_services() -> Services:
     from ledger import Ledger
     from markets import default_registry
     from markets.pvoo import HttpChainClient
-    from fallback import CsvPriceSource, FallbackPriceSource
     from prices import PriceStore
 
     settings = load_settings()
-    pool = make_pool(settings)
+    chain = HttpChainClient(settings.chain_url)
+    try:
+        pool = make_pool(settings, timeout=10)
+    except DB_DOWN as exc:
+        log.warning("Database unreachable at startup (%s); serving prices from CSV, "
+                    "account endpoints offline", type(exc).__name__)
+        return offline_services(chain)
+    try:
+        account_id = resolve_account(pool, settings.account_id)
+    except BaseException:
+        pool.close()
+        raise
     # Quotes, history, and backtests keep working from CSV if the database drops.
     prices = FallbackPriceSource(PriceStore(pool), CsvPriceSource())
-    registry = default_registry(prices, HttpChainClient(settings.chain_url))
-    ledger = Ledger(pool, resolve_account(pool, settings.account_id))
+    registry = default_registry(prices, chain)
+    ledger = Ledger(pool, account_id)
     return Services(prices, registry, ledger, TradeDesk(registry, ledger), close=pool.close)
 
 
@@ -113,6 +140,9 @@ ERRORS: list[tuple[type[Exception], int, str]] = [
     (UnknownRange, 400, "bad_range"),
     (NotEnoughHistory, 422, "not_enough_history"),
     (NoPriceData, 503, "no_price_data"),
+    (InvalidContract, 422, "invalid_contract"),
+    (DatabaseUnavailable, 503, "database_unavailable"),
+    *((t, 503, "database_unavailable") for t in DB_DOWN),
 ]
 
 
@@ -138,7 +168,12 @@ def create_app(services: Services | None = None) -> FastAPI:
     @app.get("/health")
     def health(request: Request):
         s = svc(request)
-        return {"ok": True, "market_open": market_open(s.clock()), "symbols": len(s.registry.symbols())}
+        return {
+            "ok": True, "market_open": market_open(s.clock()), "symbols": len(s.registry.symbols()),
+            "prices": "csv" if s.offline else "database",
+            "csv_fallbacks": getattr(s.prices, "fallback_count", 0),
+            "account": "offline" if s.offline else "online",
+        }
 
     @app.get("/markets")
     def markets(request: Request):
@@ -153,6 +188,49 @@ def create_app(services: Services | None = None) -> FastAPI:
             "symbol": q.symbol, "asset_class": q.asset_class, "price": money(q.price),
             "as_of": q.as_of.isoformat(), "market_open": market_open(now),
             "note": price_note(now, q.as_of),
+        }
+
+    @app.get("/options/quote")
+    def option_quote(
+        request: Request,
+        symbol: str | None = None,
+        underlying: str | None = None,
+        type: str | None = None,
+        strike: float | None = None,
+        expiry: str | None = None,
+    ):
+        """Price one contract, by symbol or by parts, with what it means for the learner."""
+        if not symbol:
+            if not (underlying and type and strike and expiry):
+                raise InvalidContract("Give a contract symbol, or underlying, type, strike, and expiry.")
+            symbol = contract_symbol(underlying, type, strike, expiry)
+        s = svc(request)
+        q = s.registry.market(symbol).option_quote(symbol)
+        c = q.contract
+        # Profit at expiry across a range of stock prices: the hockey stick.
+        lo, hi = c.strike * Decimal("0.7"), c.strike * Decimal("1.3")
+        payoff = [
+            {"price": money(p), "profit": money(q.profit_at_expiry(p))}
+            for p in (lo + (hi - lo) * i / 12 for i in range(13))
+        ]
+        return {
+            "symbol": c.symbol, "underlying": c.underlying, "type": c.kind,
+            "strike": num(c.strike), "expiry": c.expiry.isoformat(), "days_left": q.days_left,
+            "underlying_price": money(q.spot), "as_of": q.as_of.isoformat(),
+            "premium_per_share": money(q.premium), "contract_size": MULTIPLIER,
+            "contract_cost": money(q.contract_cost), "breakeven": money(q.breakeven),
+            "max_loss": money(q.contract_cost),
+            "max_gain": None if q.max_gain is None else money(q.max_gain),
+            "volatility_pct": round(q.vol * 100, 1),
+            "payoff_at_expiry": payoff,
+            "spoken": (
+                f"One {c.spoken()}, costs {money(q.premium):,.2f} dollars a share, so "
+                f"{money(q.contract_cost):,.2f} dollars for the contract of {MULTIPLIER} shares. "
+                f"The most you can lose is that {money(q.contract_cost):,.2f} dollars. "
+                f"At expiry the stock must be "
+                f"{'above' if c.kind == 'call' else 'below'} {money(q.breakeven):,.2f} dollars to make money."
+            ),
+            "warning": "Most beginners lose money on options. Use practice money only.",
         }
 
     @app.get("/history")

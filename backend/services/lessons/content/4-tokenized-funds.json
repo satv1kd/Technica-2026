@@ -27,7 +27,7 @@
     {
       "id": "pvoo-4",
       "title": "Check the backing",
-      "say": "Anyone can check this. On chain there are {supply} PVOO, and our ledger says {ledger}. They match, so every token is backed.",
+      "say": "Anyone can check this. On chain there are {supply} PVOO, and our ledger says {ledger}. {backing_verdict}",
       "data": [{ "tool": "check_token_backing", "args": {} }]
     },
     {

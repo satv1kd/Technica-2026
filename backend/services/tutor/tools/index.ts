@@ -1,4 +1,4 @@
-import type { FunctionDeclaration } from "../gemini";
+import type { FunctionDeclaration } from "../llm";
 import { TRADING_TOOLS } from "./trading";
 import { tutoringTools } from "./tutoring";
 import type { Tool } from "./types";

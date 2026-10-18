@@ -90,7 +90,11 @@ const HAS_RISK = /fall as well as rise|could lose|can lose|not a promise|not wha
 
 export function toSpeech(text: string): string {
   const clean = speakNumbers(describeShapes(stripMarkdown(text)));
-  let out = sentences(clean).flatMap(splitLong).join(" ");
+  // Every sentence ends in punctuation so TTS pauses between them.
+  let out = sentences(clean)
+    .flatMap(splitLong)
+    .map((s) => (/[.!?]["')\]]?$/.test(s) ? s : `${s}.`))
+    .join(" ");
   if (mentionsReturn(text) && !HAS_RISK.test(out)) out = `${out} ${RISK_NOTE}`;
   return out;
 }

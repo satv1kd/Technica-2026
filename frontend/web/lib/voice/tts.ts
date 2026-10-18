@@ -1,6 +1,6 @@
 /**
  * Speak tutor replies. Streams MP3 from /api/tts (ElevenLabs or cache), plays
- * WAV from the Gemini fallback, and falls back to the browser's own voice.
+ * MP3 from the OpenAI fallback, and falls back to the browser's own voice.
  * Starting a new utterance cancels the old one. The last clip is kept so
  * "repeat" replays instantly with no API call.
  */

@@ -7,7 +7,7 @@
 export const BAUD = 115_200;
 const ACK_TIMEOUT_MS = 8_000;
 
-type SerialPortLike = {
+export type SerialPortLike = {
   open(o: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
   readable: ReadableStream<Uint8Array> | null;
@@ -29,10 +29,16 @@ export class ArmLink {
     return this.port !== null;
   }
 
+  constructor(private readonly ackTimeoutMs = ACK_TIMEOUT_MS) {}
+
   /** Must be called from a user gesture (the browser shows a port picker). */
   async connect(): Promise<void> {
     const serial = (navigator as any).serial;
-    const port: SerialPortLike = await serial.requestPort();
+    await this.open(await serial.requestPort());
+  }
+
+  /** Open an already-chosen port. Exposed for tests and for reconnecting. */
+  async open(port: SerialPortLike): Promise<void> {
     await port.open({ baudRate: BAUD });
     this.port = port;
     this.writer = port.writable!.getWriter();
@@ -53,10 +59,14 @@ export class ArmLink {
   }
 
   private async readLine(): Promise<string> {
-    const deadline = Date.now() + ACK_TIMEOUT_MS;
+    const deadline = Date.now() + this.ackTimeoutMs;
     while (!this.buffer.includes("\n")) {
-      if (Date.now() > deadline) throw new Error("The arm did not answer.");
-      const { value, done } = await this.reader!.read();
+      // Race each read against the deadline: a silent arm never resolves read().
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("The arm did not answer.")), Math.max(0, deadline - Date.now()));
+      });
+      const { value, done } = await Promise.race([this.reader!.read(), timeout]).finally(() => clearTimeout(timer));
       if (done) throw new Error("The arm disconnected.");
       this.buffer += value;
     }
@@ -66,13 +76,24 @@ export class ArmLink {
     return line;
   }
 
+  /**
+   * Send commands one at a time. An ERR reply stops the drawing but keeps the
+   * link; a timeout or a dropped port disconnects, so the app can fall back to
+   * the on-screen palm and sound.
+   */
   async send(cmds: string[], onProgress?: (i: number) => void): Promise<void> {
     if (!this.writer) throw new Error("The arm is not connected.");
     const enc = new TextEncoder();
     for (let i = 0; i < cmds.length; i++) {
-      await this.writer.write(enc.encode(cmds[i] + "\n"));
-      let reply = await this.readLine();
-      while (reply && !/^(OK|ERR)/.test(reply)) reply = await this.readLine(); // skip debug lines
+      let reply: string;
+      try {
+        await this.writer.write(enc.encode(cmds[i] + "\n"));
+        reply = await this.readLine();
+        while (!/^(OK|ERR)/.test(reply)) reply = await this.readLine(); // skip debug lines
+      } catch (err) {
+        await this.disconnect().catch(() => {});
+        throw err;
+      }
       if (reply.startsWith("ERR")) throw new Error(`Arm rejected "${cmds[i]}": ${reply}`);
       onProgress?.(i);
     }

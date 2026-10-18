@@ -305,3 +305,47 @@ def test_simulated_settlement_carries_an_earlier_explorer_link():
     assert result.settlement.kind == "simulated"
     assert result.settlement.extra["example_explorer"].endswith("old?cluster=devnet")
     assert "earlier PVOO trade" in result.settlement.note
+
+
+# Database down at startup ---------------------------------------------------
+
+def test_engine_starts_offline_when_the_database_is_down(monkeypatch):
+    from fastapi.testclient import TestClient
+    from psycopg_pool import PoolTimeout
+
+    import api
+    import db
+
+    def down(*_args, **_kwargs):
+        raise PoolTimeout("couldn't get a connection")
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@127.0.0.1:9/x")
+    monkeypatch.setattr(db, "make_pool", down)
+    svc = api.build_services()
+    assert svc.offline
+    with TestClient(api.create_app(svc)) as client:
+        health = client.get("/health").json()
+        assert health["prices"] == "csv" and health["account"] == "offline"
+        # Prices still come from the CSV backup.
+        quote = client.get("/quote", params={"symbol": "AAPL"})
+        assert quote.status_code == 200 and quote.json()["price"] > 0
+        assert client.post("/backtest", json={"symbol": "VOO", "amount": 1000}).status_code == 200
+        # The account is unavailable, with a clear error instead of a crash.
+        for r in (client.get("/portfolio"),
+                  client.post("/propose", json={"side": "buy", "symbol": "AAPL", "qty": 1}),
+                  client.get("/review")):
+            assert r.status_code == 503
+            assert r.json()["error"] == "database_unavailable"
+
+
+def test_database_dropping_mid_request_is_a_503():
+    import psycopg
+
+    class Dropped(FakeLedger):
+        def cash(self):
+            raise psycopg.OperationalError("server closed the connection")
+
+    desk, _, _, _ = make_desk()
+    with _client(desk, Dropped()) as client:
+        r = client.get("/portfolio")
+    assert r.status_code == 503 and r.json()["error"] == "database_unavailable"

@@ -26,8 +26,12 @@ export interface CheckResult {
 // A number plus any unit that makes it a fact: "$560", "3.5%", "12 percent", "40 dollars".
 const NUM_RE = /-?\$?\d[\d,]*(?:\.\d+)?(?:%|\s(?:percent|dollars?|cents?)\b)?/gi;
 
+// "1,178 dollars and 75 cents" is one amount, the way speech writes $1,178.75.
+const DOLLARS_AND_CENTS = /(\d[\d,]*)\s+dollars?\s+and\s+(\d{1,2})\s+cents?\b/gi;
+
 export function extractNumbers(text: string): string[] {
-  return (text.match(NUM_RE) ?? []).filter((t) => /\d/.test(t));
+  const joined = text.replace(DOLLARS_AND_CENTS, (_, d, c) => `$${d}.${c.padStart(2, "0")}`);
+  return (joined.match(NUM_RE) ?? []).filter((t) => /\d/.test(t));
 }
 
 const numeric = (token: string) => token.match(/-?[\d,]*\.?\d+/)?.[0].replace(/,/g, "") ?? "";

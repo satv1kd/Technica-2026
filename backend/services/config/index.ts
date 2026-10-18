@@ -11,7 +11,8 @@ const secret = z
 
 /** Keys the app cannot run without. */
 const requiredSchema = z.object({
-  GEMINI_API_KEY: secret,
+  /** OpenAI key for the Codex tutor model and the fallback voice. */
+  CODEX_API_KEY: secret,
   ELEVENLABS_API_KEY: secret,
   DATABASE_URL: secret.refine(
     (v) => /^postgres(ql)?:\/\//.test(v),
@@ -23,9 +24,11 @@ const requiredSchema = z.object({
 const optionalSchema = z.object({
   DATABASE_PASSWORD: z.string().optional(),
   ALPACA_KEY_ID: z.string().optional(),
+  ALPACA_API_KEY: z.string().optional(),
   ALPACA_SECRET_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().min(1).default("EXAVITQu4vr4xnSDxMaL"),
-  GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+  CODEX_MODEL: z.string().min(1).default("gpt-5.3-codex"),
+  CODEX_REASONING: z.enum(["minimal", "low", "medium", "high"]).default("low"),
   SOLANA_RPC_URL: z.string().url().default("https://api.devnet.solana.com"),
   SOLANA_PAYER_SECRET_KEY: z.string().optional(),
   ENGINE_URL: z.string().url().default("http://localhost:8000"),
@@ -64,6 +67,8 @@ function dropBlanks(env: Record<string, string | undefined>) {
  */
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   const clean = dropBlanks(env);
+  // OPENAI_API_KEY is the name OpenAI's own docs use; accept it too.
+  if (clean.CODEX_API_KEY === undefined && clean.OPENAI_API_KEY !== undefined) clean.CODEX_API_KEY = clean.OPENAI_API_KEY;
   const missing: string[] = [];
   const invalid: { key: string; reason: string }[] = [];
 
