@@ -1,6 +1,6 @@
 /**
- * The tutor against the real Gemini model and the real trading engine.
- * Needs GEMINI_API_KEY and a running engine (ENGINE_URL, default :8000).
+ * The tutor against the real OpenAI Codex model and the real trading engine.
+ * Needs CODEX_API_KEY and a running engine (ENGINE_URL, default :8000).
  * Nothing here confirms a trade, so the practice account is never changed.
  *
  *   npm run test:live
@@ -9,12 +9,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { loadCurriculum } from "@services/lessons/loader";
 import { MemoryProgress } from "@services/lessons/progress";
 import { engineClient, type EngineFetch } from "@services/tutor/engine";
-import { geminiClient } from "@services/tutor/gemini";
+import { codexClient } from "@services/tutor/codex";
 import { checkReply, type ToolLogEntry } from "@services/tutor/guardrails";
 import { runAction, runTurn, type TutorDeps } from "@services/tutor/loop";
 import { buildRegistry } from "@services/tutor/tools";
 
-const key = process.env.GEMINI_API_KEY;
+const key = process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY;
 const engineUrl = process.env.ENGINE_URL || "http://localhost:8000";
 
 /** Engine client that records every response, so replies can be checked against them. */
@@ -28,7 +28,7 @@ function recording(engine: EngineFetch) {
   return { fetch, log };
 }
 
-describe.skipIf(!key)("tutor with live Gemini", () => {
+describe.skipIf(!key)("tutor with live Codex", () => {
   let base: Omit<TutorDeps, "engine">;
   const real = engineClient(engineUrl);
 
@@ -37,7 +37,7 @@ describe.skipIf(!key)("tutor with live Gemini", () => {
       throw new Error(`The trading engine isn't running at ${engineUrl}. Start it from backend/services/engine.`);
     });
     base = {
-      generate: geminiClient(key!, process.env.GEMINI_MODEL || "gemini-2.5-flash", 45_000),
+      generate: codexClient(key!, process.env.CODEX_MODEL || "gpt-5.3-codex", { timeoutMs: 60_000 }),
       lessons: loadCurriculum(),
       progress: new MemoryProgress(),
       registry: buildRegistry(),
@@ -77,7 +77,7 @@ describe.skipIf(!key)("tutor with live Gemini", () => {
 
     const cancelled = await runAction({ ...base, engine: real }, { type: "cancel" }, r.state);
     expect(cancelled.reply).toMatch(/Cancelled/);
-    expect(cancelled.state.pendingProposal).toBeUndefined();
+    expect(cancelled.state.pendingProposal).toBeFalsy();
   }, 120_000);
 
   it("starts a lesson by voice", async () => {

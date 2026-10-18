@@ -1,6 +1,6 @@
 """Sonar trading engine: a practice brokerage over REST.
 
-Knows nothing about Gemini, voice, or the arm. Run from services/engine:
+Knows nothing about the tutor model, voice, or the arm. Run from services/engine:
 
     .venv/Scripts/python -m uvicorn api:app --port 8000
 """

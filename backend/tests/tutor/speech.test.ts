@@ -82,6 +82,12 @@ describe("guardrails", () => {
     expect(checkReply("You should buy NVDA now.", []).reasons).toContain("Personalized advice detected");
   });
 
+  it("reads 'N dollars and M cents' as one amount", () => {
+    const tools = [log("run_backtest", { end_value: 1178.75 })];
+    expect(checkReply("It would be worth 1178 dollars and 75 cents now.", tools).ok).toBe(true);
+    expect(checkReply("It would be worth 1,178 dollars and 5 cents now.", tools).unverified).toEqual(["$1,178.05"]);
+  });
+
   it("blocks trade claims without a confirmed trade", () => {
     expect(checkReply("Done, you bought two shares.", []).reasons).toContain("Trade claimed without a confirmed trade");
     expect(checkReply("Done, you bought two shares.", [log("confirm_trade", { ok: 1 })]).ok).toBe(true);

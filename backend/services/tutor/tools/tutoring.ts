@@ -135,7 +135,7 @@ export function tutoringTools(registry: Map<string, Tool>): Tool[] {
   const suggestOptions: Tool = {
     name: "suggest_options",
     description:
-      "Offer one context-aware option in the numbered menu, like 'Continue Stocks vs. ETFs'. Shown as 'Options from Gemini'.",
+      "Offer one context-aware option in the numbered menu, like 'Continue Stocks vs. ETFs'. Shown as 'Suggested options'.",
     parameters: {
       type: "object",
       properties: {

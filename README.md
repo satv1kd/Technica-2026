@@ -11,7 +11,7 @@ The full spec is in [.taskmaster/docs/prd.txt](.taskmaster/docs/prd.txt).
 
 - Node.js 20 or newer
 - A Tiger Data (Postgres + TimescaleDB) database
-- API keys for Gemini and ElevenLabs
+- API keys for OpenAI (the Codex tutor model) and ElevenLabs
 
 ## Setup
 
@@ -31,12 +31,12 @@ The full spec is in [.taskmaster/docs/prd.txt](.taskmaster/docs/prd.txt).
 
    | Key | Required | Where to get it |
    | --- | --- | --- |
-   | `GEMINI_API_KEY` | yes | https://aistudio.google.com/apikey |
+   | `CODEX_API_KEY` (or `OPENAI_API_KEY`) | yes | https://platform.openai.com/api-keys; runs the tutor (`gpt-5.3-codex`) and the fallback voice |
    | `ELEVENLABS_API_KEY` | yes | ElevenLabs dashboard, under API keys |
    | `DATABASE_URL` | yes | Tiger Data console; must start with `postgres://` or `postgresql://` |
    | `ALPACA_KEY_ID` (or `ALPACA_API_KEY`), `ALPACA_SECRET_KEY` | no | Alpaca paper trading; without them, prices come from `data/fallback/*.csv` |
    | `SOLANA_PAYER_SECRET_KEY` | no | A devnet keypair; without it, PVOO trades use ledger-only settlement |
-   | `SOLANA_RPC_URL`, `ENGINE_URL`, `CHAIN_URL`, `GEMINI_MODEL`, `ELEVENLABS_VOICE_ID` | no | Defaults are in `.env.example` |
+   | `SOLANA_RPC_URL`, `ENGINE_URL`, `CHAIN_URL`, `CODEX_MODEL`, `CODEX_REASONING`, `ELEVENLABS_VOICE_ID` | no | Defaults are in `.env.example` |
 
 4. Create the database schema. The script is idempotent, so you can rerun it after pulling schema changes. It only needs `DATABASE_URL`.
 
@@ -71,7 +71,7 @@ and lists every problem at once:
 
 ```
 Sonar configuration error:
-  - GEMINI_API_KEY is missing
+  - CODEX_API_KEY is missing
   - DATABASE_URL must be a postgres:// or postgresql:// connection string
 Copy .env.example to .env at the repo root and fill these in.
 ```
@@ -136,7 +136,7 @@ cd backend/services/engine
 | `npm run test:db` | Database integration tests (uses `TEST_DATABASE_URL`, else `DATABASE_URL`) |
 | `npm run chain:setup` / `npm run chain` | One-time PVOO devnet setup / run the chain service |
 | `npm run test:devnet` | PVOO tests on Solana devnet (needs funded devnet SOL) |
-| `npm run test:live` | Tutor tests against real Gemini and a running engine (uses API quota) |
+| `npm run test:live` | Tutor tests against the real Codex model and a running engine (uses API quota) |
 | `npm run test:firmware` | Palm-arm IK, motion, and protocol tests, compiled for your computer (needs a C++ compiler) |
 
 ## Repository layout
@@ -157,10 +157,10 @@ frontend/                      Frontend team
 
 backend/                       Backend team
   services/engine/             Python: practice brokerage, ingest, chart series, CSV fallback
-  services/tutor/              Gemini loop, 18 tools, guardrails, speech style
+  services/tutor/              Codex (OpenAI Responses API) loop, 18 tools, guardrails, speech style
   services/lessons/            Curriculum JSON, step player, quiz, progress
   services/chain/              PVOO mint, burn, and supply on Solana devnet
-  services/voice/              ElevenLabs STT and TTS with Gemini fallback and cache
+  services/voice/              ElevenLabs STT and TTS with OpenAI TTS fallback and cache
   services/data/               Tiger Data schema, migrations, DB connection
   services/config/             Environment validation
   bridge/serial/               Arm path planner and Web Serial link

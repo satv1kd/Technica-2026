@@ -91,7 +91,7 @@ describe("runTurn", () => {
     const { generate, requests } = scripted([...looping, [say("Sonar trades seven assets.")]]);
     const r = await runTurn(deps(generate, engine), { transcript: "what can I trade" });
     expect(requests).toHaveLength(MAX_ROUNDS + 1);
-    expect(requests.at(-1)!.tools).toBeUndefined();
+    expect(requests.at(-1)!.toolChoice).toBe("none");
     expect(r.reply).toBe("Sonar trades seven assets.");
   });
 
