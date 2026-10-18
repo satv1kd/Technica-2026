@@ -4,20 +4,22 @@
   "version": "0.1.0",
   "description": "Sonar: voice-first investing tutor for blind and low-vision learners",
   "workspaces": [
-    "apps/web"
+    "frontend/web"
   ],
   "scripts": {
-    "dev": "npm run dev -w apps/web",
-    "build": "npm run build -w apps/web",
+    "dev": "npm run dev -w frontend/web",
+    "build": "npm run build -w frontend/web",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "tsx --env-file-if-exists=.env services/data/migrate.ts",
-    "db:refresh": "tsx --env-file-if-exists=.env services/data/migrate.ts --refresh",
-    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/db.integration.test.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env backend/services/data/migrate.ts",
+    "db:refresh": "tsx --env-file-if-exists=.env backend/services/data/migrate.ts --refresh",
+    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/db.integration.test.ts",
     "test:e2e": "playwright test",
-    "chain": "tsx --env-file-if-exists=.env services/chain/server.ts",
-    "chain:setup": "tsx --env-file-if-exists=.env services/chain/setup.ts",
-    "test:devnet": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/chain.devnet.test.ts"
+    "chain": "tsx --env-file-if-exists=.env backend/services/chain/server.ts",
+    "chain:setup": "tsx --env-file-if-exists=.env backend/services/chain/setup.ts",
+    "test:devnet": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/chain.devnet.test.ts",
+    "test:frontend": "vitest run frontend/tests/unit",
+    "test:backend": "vitest run backend/tests"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.9",
