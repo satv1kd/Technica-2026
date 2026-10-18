@@ -10,10 +10,9 @@
     "resolveJsonModule": true,
     "jsx": "preserve",
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@services/*": ["services/*"],
-      "@web/*": ["apps/web/*"]
+      "@services/*": ["./services/*"],
+      "@web/*": ["./apps/web/*"]
     }
   },
   "include": ["services/**/*.ts", "apps/web/**/*.ts", "apps/web/**/*.tsx", "tests/**/*.ts"],

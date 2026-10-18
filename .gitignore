@@ -30,3 +30,8 @@ next-env.d.ts
 dist/
 coverage/
 *.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/

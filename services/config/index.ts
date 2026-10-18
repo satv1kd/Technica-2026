@@ -21,6 +21,7 @@ const requiredSchema = z.object({
 
 /** Keys that only unlock optional behavior; each has a documented fallback. */
 const optionalSchema = z.object({
+  DATABASE_PASSWORD: z.string().optional(),
   ALPACA_KEY_ID: z.string().optional(),
   ALPACA_SECRET_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().min(1).default("21m00Tcm4TlvDq8ikWAM"),

@@ -3,18 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "description": "Sonar: voice-first investing tutor for blind and low-vision learners",
-  "workspaces": ["apps/web"],
+  "workspaces": [
+    "apps/web"
+  ],
   "scripts": {
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx --env-file-if-exists=.env services/data/migrate.ts",
+    "db:refresh": "tsx --env-file-if-exists=.env services/data/migrate.ts --refresh",
+    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/db.integration.test.ts"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
