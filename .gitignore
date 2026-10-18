@@ -41,3 +41,6 @@ test-results/
 playwright-report/
 data/ingest_state.json
 data/tts-cache/
+
+# Task Master: each person picks their own tag
+.taskmaster/state.json

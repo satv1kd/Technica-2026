@@ -11,10 +11,10 @@
     "jsx": "preserve",
     "noEmit": true,
     "paths": {
-      "@services/*": ["./services/*"],
-      "@web/*": ["./apps/web/*"]
+      "@services/*": ["./backend/services/*"],
+      "@web/*": ["./frontend/web/*"]
     }
   },
-  "include": ["services/**/*.ts", "apps/web/**/*.ts", "apps/web/**/*.tsx", "tests/**/*.ts", "bridge/**/*.ts"],
+  "include": ["backend/**/*.ts", "frontend/web/**/*.ts", "frontend/web/**/*.tsx", "frontend/tests/**/*.ts"],
   "exclude": ["node_modules", ".next"]
 }

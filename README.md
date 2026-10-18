@@ -78,10 +78,10 @@ Copy .env.example to .env at the repo root and fill these in.
 
 ## Trading engine
 
-The practice brokerage is a Python FastAPI service in `services/engine`. It reads the same root `.env`.
+The practice brokerage is a Python FastAPI service in `backend/services/engine`. It reads the same root `.env`.
 
 ```bash
-cd services/engine
+cd backend/services/engine
 py -3.13 -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt
 .venv/Scripts/python -m uvicorn api:app --port 8000
@@ -112,7 +112,7 @@ Rules the engine enforces:
 Tests (the API tests run against the database on a throwaway account and clean up after themselves):
 
 ```bash
-cd services/engine
+cd backend/services/engine
 .venv/Scripts/python -m pytest
 ```
 
@@ -122,32 +122,67 @@ cd services/engine
 | --- | --- |
 | `npm run dev` | Start the web app in development mode |
 | `npm run build` | Production build of the web app |
-| `npm test` | Run the unit tests (Vitest) |
+| `npm test` | Run all unit tests (Vitest) |
+| `npm run test:frontend` | Frontend unit tests only |
+| `npm run test:backend` | Backend unit tests only |
+| `npm run test:e2e` | Keyboard-only browser tests (Playwright) |
 | `npm run typecheck` | Type-check the whole repo |
 | `npm run db:migrate` | Create or update the database schema |
 | `npm run db:refresh` | Materialize all weekly and monthly candles |
-| `npm run test:db` | Database integration tests (needs `TEST_DATABASE_URL`) |
+| `npm run test:db` | Database integration tests (uses `TEST_DATABASE_URL`, else `DATABASE_URL`) |
+| `npm run chain:setup` / `npm run chain` | One-time PVOO devnet setup / run the chain service |
+| `npm run test:devnet` | PVOO tests on Solana devnet (needs funded devnet SOL) |
 
 ## Repository layout
 
+The code is split by team. Each side owns its folders; the API routes and two
+contract files are the handshake between them.
+
 ```
-apps/web/          Next.js app: UI, voice, tutor API routes
-services/config/   Environment loading and validation
-services/data/     Tiger Data schema, price ingest, chart series
-services/lessons/  Lesson curriculum (JSON) and lesson engine
-services/tutor/    Gemini function-calling loop and tools
-services/engine/   Practice brokerage (two-step trades, ledger)
-services/chain/    PVOO mint, burn, and supply on Solana devnet
-firmware/          ESP32 palm-arm firmware
-bridge/            Arm path planner and Web Serial helper
-tests/             Unit and integration tests
+frontend/                      Frontend team
+  web/                         Next.js app
+    app/page.tsx, components/  The single-screen UI
+    lib/voice/                 Push-to-talk, earcons, streaming TTS player
+    lib/palm/                  Palm scene drawing, arm motion, sonification
+    lib/a11y/, lib/state/      Keymap, live region, app state machine
+    app/api/                   Thin route handlers that call backend/ (owned by backend)
+  tests/unit/                  State machine, palm, sonification tests
+  tests/e2e/                   Keyboard-only Playwright tests
+
+backend/                       Backend team
+  services/engine/             Python: practice brokerage, ingest, chart series, CSV fallback
+  services/tutor/              Gemini loop, 16 tools, guardrails, speech style
+  services/lessons/            Curriculum JSON, step player, quiz, progress
+  services/chain/              PVOO mint, burn, and supply on Solana devnet
+  services/voice/              ElevenLabs STT and TTS with Gemini fallback and cache
+  services/data/               Tiger Data schema, migrations, DB connection
+  services/config/             Environment validation
+  bridge/serial/               Arm path planner and Web Serial link
+  firmware/                    ESP32 palm-arm firmware
+  tests/                       Unit, database, and devnet tests
+
+data/                          Shared: CSV price fallback (tts-cache is gitignored)
 ```
+
+Contract files (changes need both teams to review):
+- `backend/services/tutor/tools/types.ts`: the `Directive` and `TurnState` shapes the UI reacts to
+- `backend/services/chart/ops.ts`: the chart drawing format used by the palm, sonification, and arm
 
 ## Task tracking
 
-Tasks are generated from the PRD with [Task Master](https://github.com/eyaltoledano/claude-task-master):
+Tasks are generated from the PRD with [Task Master](https://github.com/eyaltoledano/claude-task-master)
+and split into three tags. Pick yours once, and `list` and `next` show only your tasks:
 
 ```bash
-task-master list
+task-master use-tag frontend   # or backend, or shared
 task-master next
 ```
+
+| Tag | Tasks |
+| --- | --- |
+| `frontend` | 4 app shell, 9 voice, 13 space bar and tray, 14 menus and settings, 15 answer card and quiz, 16 palm scene, 17 sonification, 18 trade confirm UI, 21 accessibility |
+| `backend` | 2 schema, 3 lessons, 5 price ingest, 6 chart series, 7 trading engine, 8 PVOO chain, 10 tutor, 11 guardrails, 12 lesson engine, 19 firmware, 20 arm bridge, 24 options (stretch) |
+| `shared` | 1 infrastructure, 22 integration testing, 23 demo and Devpost |
+
+Dependencies that cross teams are listed in each task's details under "Cross-team dependencies".
+The current tag is stored per person in `.taskmaster/state.json`, which is gitignored.
