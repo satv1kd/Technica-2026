@@ -4,12 +4,33 @@
  *   H        home and lift        P0 / P1  lift / lower stylus
  *   M x y    move to x, y in [0,1] inside the 6 x 4 cm box
  *   T ms     tap                  W ms     wait
- *   F n      max pressure 1..5    (the firmware enforces speed limits)
+ *   F n      max pressure 1..5
+ *
+ * Coordinates are chart coordinates: x 0 = past (left) .. 1 = today (right),
+ * y 0 = low .. 1 = high. The firmware maps them onto the palm box and caps
+ * speed at 4 cm/s with a trapezoidal profile.
  */
-import type { ChartOps } from "../../services/chart/ops";
+import type { ChartOps, Pt } from "../../services/chart/ops";
 
 export const MAX_PRESSURE = 3;
-const fmt = (n: number) => Math.min(1, Math.max(0, n)).toFixed(3);
+export const TAP_MS = 200;
+/** Stylus-down moves are split into steps this long (0.05 of 6 cm = 3 mm).
+ *  The arm interpolates in joint space, so a long single move would draw an
+ *  arc instead of the straight segment shown on screen. */
+export const MAX_STEP = 0.05;
+
+const clamp = (n: number) => Math.min(1, Math.max(0, n));
+const fmt = (n: number) => clamp(n).toFixed(3);
+const move = (p: Pt) => `M ${fmt(p.x)} ${fmt(p.y)}`;
+
+/** Points from a (exclusive) to b (inclusive), at most MAX_STEP apart. */
+export function waypoints(a: Pt, b: Pt, maxStep = MAX_STEP): Pt[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / maxStep));
+  return Array.from({ length: n }, (_, i) => {
+    const t = (i + 1) / n;
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  });
+}
 
 export function plan(chart: ChartOps, pressure = MAX_PRESSURE): string[] {
   const cmds = ["H", `F ${Math.min(5, Math.max(1, Math.round(pressure)))}`];
@@ -18,25 +39,34 @@ export function plan(chart: ChartOps, pressure = MAX_PRESSURE): string[] {
     if (down) cmds.push("P0");
     down = false;
   };
+  const lower = () => {
+    if (!down) cmds.push("P1");
+    down = true;
+  };
   for (const op of chart.ops) {
     if (op.op === "pause") {
       lift();
       cmds.push(`W ${Math.round(op.ms)}`);
     } else if (op.op === "tap") {
       lift();
-      cmds.push(`M ${fmt(op.at.x)} ${fmt(op.at.y)}`, "T 180");
+      cmds.push(move(op.at), `T ${TAP_MS}`);
     } else if (op.points.length) {
       lift();
       const [first, ...rest] = op.points;
-      cmds.push(`M ${fmt(first.x)} ${fmt(first.y)}`, "P1");
-      down = true;
-      // Dashed lines lift briefly between segments so they feel different.
+      cmds.push(move(first));
+      lower();
+      let prev = first;
       rest.forEach((p, i) => {
+        // Dashed lines skip every other segment with the stylus up, so they
+        // feel different from solid ones.
         if (op.style === "dashed" && i % 2 === 1) {
-          cmds.push("P0", `M ${fmt(p.x)} ${fmt(p.y)}`, "P1");
+          lift();
+          cmds.push(move(p));
         } else {
-          cmds.push(`M ${fmt(p.x)} ${fmt(p.y)}`);
+          lower();
+          cmds.push(...waypoints(prev, p).map(move));
         }
+        prev = p;
       });
     }
   }
