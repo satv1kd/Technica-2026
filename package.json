@@ -20,7 +20,7 @@
     "test:devnet": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/chain.devnet.test.ts",
     "test:live": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/tutor/tutor.live.test.ts",
     "test:frontend": "vitest run frontend/tests/unit",
-    "test:firmware": "c++ -std=c++17 -I firmware/palm_arm firmware/palm_arm/test/host_test.cpp -o node_modules/.palm_arm_test && node_modules/.palm_arm_test",
+    "test:firmware": "c++ -std=c++17 -I backend/firmware/palm_arm backend/firmware/palm_arm/test/host_test.cpp -o node_modules/.palm_arm_test && node_modules/.palm_arm_test",
     "test:backend": "vitest run backend/tests"
   },
   "dependencies": {

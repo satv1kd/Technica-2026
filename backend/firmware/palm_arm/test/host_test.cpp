@@ -1,6 +1,6 @@
 // Host tests for the firmware's pure logic (IK, motion profile, protocol).
 //
-//   c++ -std=c++17 -I firmware/palm_arm firmware/palm_arm/test/host_test.cpp -o /tmp/palm_arm_test && /tmp/palm_arm_test
+//   npm run test:firmware
 //
 // The IK and profile values below come from frontend/web/lib/palm/motion.ts,
 // so a pass means the physical arm and the on-screen arm agree.
