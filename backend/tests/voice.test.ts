@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, unlinkSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { synthesize, STYLE_PROMPT, type TtsConfig } from "@services/voice/tts";
+import { synthesize, OPENAI_TTS_MODEL, OPENAI_VOICE, type TtsConfig } from "@services/voice/tts";
 import { transcribe } from "@services/voice/stt";
 
 const directories: string[] = [];
@@ -16,7 +16,7 @@ afterEach(() => {
 function config(fetchImpl: typeof fetch): TtsConfig {
   const cacheDir = mkdtempSync(path.join(tmpdir(), "sonar-voice-test-"));
   directories.push(cacheDir);
-  return { elevenKey: "test", geminiKey: "test", voiceId: "voice", geminiModels: ["test-tts"], cacheDir, fetchImpl };
+  return { elevenKey: "test", openaiKey: "test", voiceId: "voice", cacheDir, fetchImpl };
 }
 
 describe("speech providers", () => {
@@ -30,17 +30,26 @@ describe("speech providers", () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
-  it("falls back to Gemini on ElevenLabs failure and wraps PCM as WAV", async () => {
+  it("falls back to OpenAI speech on ElevenLabs failure and caches the MP3", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce(new Response("quota", { status: 429 }))
-      .mockResolvedValueOnce(Response.json({ candidates: [{ content: { parts: [{ inlineData: { data: Buffer.from([0, 1, 2, 3]).toString("base64") } }] } }] }));
-    const result = await synthesize(config(request), "Hello", "slow", () => {});
-    expect(result?.provider).toBe("gemini");
-    expect(result?.contentType).toBe("audio/wav");
-    const bytes = Buffer.from(await new Response(result?.body as BodyInit).arrayBuffer());
-    expect(bytes.subarray(0, 4).toString()).toBe("RIFF");
-    expect(bytes.length).toBe(48);
-    expect(JSON.parse(request.mock.calls[1][1].body).contents[0].parts[0].text).toContain(STYLE_PROMPT);
+      .mockResolvedValueOnce(new Response("openai-mp3", { headers: { "content-type": "audio/mpeg" } }));
+    const cfg = config(request);
+    const result = await synthesize(cfg, "Hello", "slow", () => {});
+    expect(result?.provider).toBe("openai");
+    expect(result?.contentType).toBe("audio/mpeg");
+    expect(Buffer.from(result?.body as Uint8Array).toString()).toBe("openai-mp3");
+
+    const [url, init] = request.mock.calls[1];
+    expect(url).toBe("https://api.openai.com/v1/audio/speech");
+    expect(init.headers.authorization).toBe("Bearer test");
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ model: OPENAI_TTS_MODEL, voice: OPENAI_VOICE, input: "Hello", response_format: "mp3" });
+    expect(body.instructions).toMatch(/warm, patient teacher.*Speak a little slower\./);
+
+    // The fallback clip is cached, so a replay costs no API call.
+    expect((await synthesize(cfg, "Hello", "slow", () => {}))?.provider).toBe("cache");
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it("returns unavailable when both providers fail so browser speech can take over", async () => {
