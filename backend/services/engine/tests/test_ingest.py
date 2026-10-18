@@ -8,7 +8,7 @@ from psycopg_pool import ConnectionPool
 
 import ingest_alpaca
 from fallback import CsvPriceSource, FallbackPriceSource
-from ingest_alpaca import MissingAlpacaKeys, alpaca_client, fetch_bars, should_refresh, upsert
+from ingest_alpaca import MissingAlpacaKeys, alpaca_client, alpaca_key_id, fetch_bars, should_refresh, upsert
 from prices import PriceStore
 
 SATURDAY = datetime(2026, 10, 17, 18, 0, tzinfo=timezone.utc)
@@ -36,6 +36,7 @@ def mock_alpaca(pages: list[dict], seen: list[httpx.Request]):
 
 def test_missing_keys_are_reported(monkeypatch):
     monkeypatch.setenv("ALPACA_KEY_ID", "")
+    monkeypatch.setenv("ALPACA_API_KEY", "")
     with pytest.raises(MissingAlpacaKeys, match="ALPACA_KEY_ID"):
         alpaca_client()
 
@@ -137,7 +138,7 @@ def test_upsert_is_idempotent(pool, keys):
 
 
 @pytest.mark.db
-@pytest.mark.skipif(not os.getenv("ALPACA_KEY_ID"), reason="ALPACA_KEY_ID not set")
+@pytest.mark.skipif(not alpaca_key_id(), reason="ALPACA_KEY_ID not set")
 def test_live_alpaca_week_of_aapl():
     with alpaca_client() as client:
         rows = list(fetch_bars(client, ("AAPL",), date(2026, 10, 12), date(2026, 10, 17)))

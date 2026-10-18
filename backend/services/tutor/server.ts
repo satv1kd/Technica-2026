@@ -5,7 +5,7 @@ import { loadCurriculum } from "../lessons/loader";
 import { DbProgress, demoAccount, MemoryProgress, type ProgressStore } from "../lessons/progress";
 import type { TtsConfig } from "../voice/tts";
 import { engineClient } from "./engine";
-import { geminiClient } from "./gemini";
+import { codexClient } from "./codex";
 import type { TutorDeps } from "./loop";
 import { buildRegistry } from "./tools";
 
@@ -23,7 +23,7 @@ export function tutor() {
     progress = new MemoryProgress();
   }
   const deps: TutorDeps = {
-    generate: geminiClient(cfg.GEMINI_API_KEY, cfg.GEMINI_MODEL),
+    generate: codexClient(cfg.CODEX_API_KEY, cfg.CODEX_MODEL, { effort: cfg.CODEX_REASONING }),
     engine: engineClient(cfg.ENGINE_URL),
     lessons: loadCurriculum(),
     progress,
@@ -33,10 +33,7 @@ export function tutor() {
   const tts: TtsConfig = {
     elevenKey: cfg.ELEVENLABS_API_KEY,
     voiceId: cfg.ELEVENLABS_VOICE_ID,
-    geminiKey: cfg.GEMINI_API_KEY,
-    geminiModels: [process.env.GEMINI_TTS_MODEL, "gemini-3.8-flash-tts", "gemini-2.5-flash-preview-tts"].filter(
-      (m): m is string => Boolean(m),
-    ),
+    openaiKey: cfg.CODEX_API_KEY,
   };
   g.__sonar = { deps, tts, elevenKey: cfg.ELEVENLABS_API_KEY };
   return g.__sonar;

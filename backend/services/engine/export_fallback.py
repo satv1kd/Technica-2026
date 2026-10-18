@@ -24,7 +24,7 @@ def export() -> dict[str, int]:
                     (symbol,),
                 ).fetchall()
                 with (FALLBACK_DIR / f"{symbol}.csv").open("w", newline="") as f:
-                    w = csv.writer(f)
+                    w = csv.writer(f, lineterminator="\n")
                     w.writerow(COLUMNS)
                     for t, *rest in rows:
                         w.writerow([t.isoformat(), *rest])

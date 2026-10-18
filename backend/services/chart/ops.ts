@@ -106,3 +106,43 @@ export function opsFromShape(shape: string, alt = ""): ChartOps {
   const legend = ops.flatMap((o) => (o.op === "stroke" && o.label ? [{ label: o.label, style: o.style }] : []));
   return { ops, alt, legend };
 }
+
+/** Shape of the engine's /options/quote response (the parts the chart needs). */
+export interface OptionQuote {
+  type: "call" | "put";
+  strike: number;
+  breakeven: number;
+  contract_cost: number;
+  payoff_at_expiry: { price: number; profit: number }[];
+}
+
+/**
+ * Profit at expiry against the stock price: the hockey stick. A dashed line
+ * marks zero profit, the solid line is the payoff, and a tap marks break-even.
+ */
+export function opsFromPayoff(q: OptionQuote): ChartOps {
+  const pts = q.payoff_at_expiry;
+  const x0 = pts[0].price, x1 = pts.at(-1)!.price;
+  const profits = pts.map((p) => p.profit);
+  const lo = Math.min(0, ...profits), hi = Math.max(0, ...profits);
+  const sx = (price: number) => (price - x0) / (x1 - x0 || 1);
+  const sy = (profit: number) => (profit - lo) / (hi - lo || 1);
+  const zero = sy(0);
+  const rising = q.type === "call" ? "rises to the right of" : "rises to the left of";
+  return {
+    ops: [
+      { op: "stroke", points: [{ x: 0, y: zero }, { x: 1, y: zero }], style: "dashed", label: "zero profit" },
+      { op: "pause", ms: 400 },
+      { op: "stroke", points: pts.map((p) => ({ x: sx(p.price), y: sy(p.profit) })), style: "solid", label: "profit at expiry" },
+      { op: "tap", at: { x: Math.min(1, Math.max(0, sx(q.breakeven))), y: zero }, label: "break-even" },
+    ],
+    alt:
+      `Profit at expiry for a ${q.type} with strike ${q.strike}. The line stays flat at a loss of ` +
+      `${q.contract_cost} dollars, then ${rising} the strike. A dashed line marks zero, ` +
+      `and a tap marks break-even at ${q.breakeven}.`,
+    legend: [
+      { label: "zero profit", style: "dashed" },
+      { label: "profit at expiry", style: "solid" },
+    ],
+  };
+}

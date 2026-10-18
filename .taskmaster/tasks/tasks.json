@@ -251,7 +251,7 @@
   "backend": {
     "tasks": [
       {
-        "id": 2,
+        "id": "2",
         "title": "Foundation: TimescaleDB Schema and Continuous Aggregates",
         "description": "Create and deploy the TimescaleDB schema with hypertables for prices, trades, positions, lesson progress, and settings. Set up continuous aggregates for weekly and monthly candles.",
         "details": "Database schema implementation:\n1. Review existing services/data/schema.sql\n2. Create hypertable for prices (ts, symbol, open, high, low, close, volume)\n3. Create tables for trades, positions, cash, lesson_progress, settings\n4. Add CHECK constraint on cash.balance >= 0\n5. Create continuous aggregates: candles_weekly (7 days) and candles_monthly (30 days)\n6. Set up refresh policies to run every hour\n7. Add indexes on symbol and ts for query performance\n8. Create migration script and deployment instructions\n\nTimescaleDB-specific features:\n- Use create_hypertable() for time-series data\n- Use time_bucket() in continuous aggregate queries\n- Use first(), last(), max(), min() window functions\n\nSQL pseudo-code:\nCREATE TABLE prices (ts TIMESTAMPTZ NOT NULL, symbol TEXT NOT NULL, open NUMERIC, high NUMERIC, low NUMERIC, close NUMERIC, volume BIGINT);\nSELECT create_hypertable('prices', 'ts');\nCREATE MATERIALIZED VIEW candles_weekly WITH (timescaledb.continuous) AS SELECT time_bucket('7 days', ts) AS bucket, symbol, first(open, ts) AS open, max(high) AS high, min(low) AS low, last(close, ts) AS close FROM prices GROUP BY bucket, symbol;",
@@ -273,7 +273,7 @@
         }
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Foundation: Lesson Content JSON Files and Schema Validation",
         "description": "Create all 5 core lesson JSON files (plus 1 stretch) from Appendix B with proper schema validation. Ensure placeholder extraction works correctly.",
         "details": "Lesson content creation:\n1. Review existing services/lessons/schema.ts (appears complete)\n2. Check existing lesson files: 1-feel-a-graph.json, 2-stocks-vs-etfs.json, 3-first-trade.json, 4-tokenized-funds.json, 6-options-basics.json\n3. Create missing lesson 5-backtesting-risk.json\n4. Ensure all lessons follow the schema: id, title, steps[], quiz{q, options, answer, why}\n5. Each step needs: id, title, say (with {PLACEHOLDER} syntax), optional data[], action[], chart{}, alt\n6. Validate all files against lessonSchema on load\n7. Extract and document all placeholders used (AAPL.pct, VOO.price, etc.)\n8. Test placeholder extraction with placeholders() function\n\nExample step structure:\n{\n  \"id\": \"etf-1\",\n  \"title\": \"One stock's trend\",\n  \"say\": \"Here's Apple over the last month. It's {AAPL.dir_1m} about {AAPL.pct_1m} percent.\",\n  \"data\": [{\"tool\": \"get_price_history\", \"args\": {\"symbol\": \"AAPL\", \"range\": \"1m\"}}],\n  \"chart\": {\"series\": [\"AAPL\"], \"smooth\": \"sma5\", \"points\": 12, \"markers\": [\"peak\"]}\n}",
@@ -295,7 +295,7 @@
         }
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Market Data: Price Ingestion from Alpaca with CSV Fallback",
         "description": "Implement price data ingestion for 6 symbols (VOO, SPY, QQQ, AAPL, MSFT, NVDA) from Alpaca API, backfilling 2 years of daily bars. Include CSV fallback for when database is unreachable.",
         "details": "Price ingestion implementation:\n1. Create services/data/ingest_alpaca.py using Alpaca Market Data API\n2. Fetch 2 years (approximately 500 trading days) of daily OHLCV bars for each of 6 symbols\n3. Insert into prices hypertable with proper timestamptz handling\n4. Create CSV fallback files in data/fallback/*.csv with same schema\n5. Implement fallback.py module that reads CSVs when database connection fails\n6. Add automatic fallback trigger on database connection errors\n7. Log all fallback usage for monitoring\n8. Schedule refresh script to run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)\n9. Handle market holidays and weekends gracefully\n10. Store last successful fetch timestamp\n\nAlpaca API pseudo-code:\nfrom alpaca.data import StockHistoricalDataClient\nfrom alpaca.data.requests import StockBarsRequest\nfrom datetime import datetime, timedelta\n\nclient = StockHistoricalDataClient(api_key, secret_key)\nrequest = StockBarsRequest(\n    symbol_or_symbols=[\"VOO\", \"SPY\", \"QQQ\", \"AAPL\", \"MSFT\", \"NVDA\"],\n    timeframe=TimeFrame.Day,\n    start=datetime.now() - timedelta(days=730)\n)\nbars = client.get_stock_bars(request)\n# Insert into TimescaleDB",
@@ -304,9 +304,9 @@
         "dependencies": [
           "2"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-10-18T03:58:34.249Z",
+        "updatedAt": "2026-10-18T06:30:31.161Z",
         "tag": "backend",
         "metadata": {
           "moveHistory": [
@@ -319,7 +319,7 @@
         }
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Market Data: Chart Series Pipeline with SMA, RDP, and Normalization",
         "description": "Implement the chart series processing pipeline that takes raw price data and produces 12-16 normalized points with markers, using SMA smoothing and Ramer-Douglas-Peucker simplification.",
         "details": "Chart series pipeline:\n1. Create services/data/series.py module\n2. Implement SMA smoothing: 5-day for 1-month range, 20-day for 6-month range\n3. Implement Ramer-Douglas-Peucker algorithm to reduce series to 12-16 points while preserving shape\n4. Normalize points to [0, 1] range for drawing on palm\n5. Identify and mark key points: peak (highest), trough (lowest), end (today)\n6. Implement shared scale for comparison mode (two series on same scale)\n7. Handle edge cases: flat series (centered flat line), insufficient data points\n8. Add narration hints: \"up\", \"down\", \"barely moved\"\n\nPython pseudo-code:\ndef chart_series(symbol: str, range: str, points: int = 12):\n    # 1. Fetch closes from database for range\n    closes = db.query(f\"SELECT close FROM prices WHERE symbol = '{symbol}' AND ts >= now() - interval '{range}'\")\n    \n    # 2. Apply SMA smoothing\n    window = 5 if range == \"1m\" else 20\n    smoothed = moving_average(closes, window)\n    \n    # 3. Apply RDP to reduce to target points\n    simplified = rdp(smoothed, epsilon=auto_epsilon(smoothed, points))\n    \n    # 4. Normalize to [0, 1]\n    min_val, max_val = min(simplified), max(simplified)\n    normalized = [(p - min_val) / (max_val - min_val) for p in simplified]\n    \n    # 5. Find markers\n    peak_idx = normalized.index(max(normalized))\n    trough_idx = normalized.index(min(normalized))\n    \n    return {\"points\": normalized, \"markers\": {\"peak\": peak_idx, \"trough\": trough_idx}}\n\nComparison mode uses: min(seriesA.min, seriesB.min) and max(seriesA.max, seriesB.max) as shared scale",
@@ -344,7 +344,7 @@
         }
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Trading Engine: REST API with Market Registry and Two-Step Trades",
         "description": "Build the Python FastAPI trading engine with pluggable market modules, ledger, and two-step trade flow (propose then confirm). Ensure cash balance never goes negative.",
         "details": "Trading engine implementation:\n1. Create services/engine/ directory with FastAPI app\n2. Design abstract Market base class: quote(), fill(), settle()\n3. Implement equity.py market for VOO, SPY, QQQ, AAPL, MSFT, NVDA\n4. Implement pvoo.py market (PVOO tokenized fund)\n5. Create ledger.py with double-entry accounting: cash and positions tables\n6. Implement trades.py with proposal and confirmation flow\n7. Add 60-second expiry on proposals\n8. Build REST endpoints:\n   - GET /markets - list available assets\n   - GET /quote?symbol=VOO - current price\n   - GET /history?symbol=VOO&range=1m - price history\n   - POST /propose {side, symbol, qty} - create proposal, return id\n   - POST /confirm {id} - execute trade if proposal is live\n   - POST /cancel {id} - cancel proposal\n   - GET /portfolio - current holdings and cash\n   - POST /backtest {symbol, amount, start_date} - historical simulation\n   - GET /review - trade history\n9. Implement portfolio.py with coaching tips (concentration, frequent trading, panic selling)\n10. Implement backtest.py with maximum drawdown calculation\n11. Add weekend/holiday handling: use last close price and state this clearly\n12. Ensure atomicity: proposal confirm either fully succeeds or fully fails\n\nPython pseudo-code:\nclass Market(ABC):\n    @abstractmethod\n    def quote(self, symbol: str) -> Quote: pass\n    @abstractmethod\n    def fill(self, side: str, symbol: str, qty: Decimal) -> Fill: pass\n    @abstractmethod\n    def settle(self, fill: Fill) -> Settlement: pass\n\nCash constraint enforcement:\ndb.execute(\"UPDATE cash SET balance = balance - ? WHERE balance >= ?\", [total, total])\nif db.rowcount == 0: raise InsufficientFundsError()",
@@ -369,7 +369,7 @@
         }
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Blockchain: PVOO SPL Token on Solana Devnet with Mint/Burn/Supply",
         "description": "Deploy PVOO token on Solana devnet as an SPL token with 6 decimals. Implement mint (on buy), burn (on sell), and supply check endpoints. Include ledger-only fallback for RPC failures.",
         "details": "Solana chain service implementation:\n1. Create services/chain/ Node.js service\n2. Use @solana/web3.js v1 and @solana/spl-token\n3. Generate or import devnet keypair for program authority (stored in env SOLANA_PAYER_SECRET_KEY)\n4. Create PVOO mint with 6 decimals\n5. Implement REST API:\n   - POST /mint {amount} - mint PVOO tokens, return tx signature and Explorer link\n   - POST /burn {amount} - burn PVOO tokens, return tx signature\n   - GET /supply - get on-chain token supply via getTokenSupply RPC call\n6. Measure and return settlement time in milliseconds\n7. Implement 8-second timeout on RPC calls\n8. Add ledger-only fallback: if RPC fails, record trade in ledger but mark as \"simulated settlement\" and return previous Explorer link as example\n9. Log all RPC failures for monitoring\n\nNode.js pseudo-code:\nimport { Connection, Keypair, PublicKey } from '@solana/web3.js';\nimport { createMint, mintTo, burn, getAccount } from '@solana/spl-token';\n\nconst connection = new Connection(SOLANA_RPC_URL, 'confirmed');\nconst payer = Keypair.fromSecretKey(bs58.decode(SOLANA_PAYER_SECRET_KEY));\n\n// One-time setup\nconst mint = await createMint(connection, payer, payer.publicKey, null, 6);\n\n// On buy\nconst startMs = Date.now();\nconst sig = await mintTo(connection, payer, mint, tokenAccount, payer, amount * 1e6);\nconst settleMs = Date.now() - startMs;\nreturn { signature: sig, settleMs, explorerUrl: `https://explorer.solana.com/tx/${sig}?cluster=devnet` };",
@@ -378,9 +378,9 @@
         "dependencies": [
           "7"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-10-18T04:02:56.073Z",
+        "updatedAt": "2026-10-18T07:16:23.626Z",
         "tag": "backend",
         "metadata": {
           "moveHistory": [
@@ -393,7 +393,7 @@
         }
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Tutor Brain: Tool Registry and Gemini Function-Calling Loop",
         "description": "Implement the 16-tool registry (11 trading + 5 tutoring) and the Gemini function-calling loop that turns learner questions into spoken replies with tool calls. Enforce the rule that all numbers must come from tool results.",
         "details": "Tutor brain implementation:\n1. Create services/tutor/ module with loop.ts, tools/ directory, prompts/system.md\n2. Implement tool registry in tools/index.ts exporting 16 tools:\n   Trading tools: list_markets, get_quote, get_price_history, show_chart, propose_trade, confirm_trade, cancel_trade, get_portfolio, run_backtest, review_trades, check_token_backing\n   Tutoring tools: start_lesson, next_step, answer_quiz, suggest_options, explain_fees\n3. Each tool has JSON schema for parameters and return type\n4. Build function-calling loop in loop.ts:\n   - Take transcript, conversation history, current state as input\n   - Call Gemini API with tools array and function calling enabled\n   - Handle up to 5 tool rounds per turn\n   - Collect all tool results\n   - Generate final reply text\n   - Return reply, tool results, UI directives (show_chart, open_menu, start_lesson)\n5. Create system prompt in prompts/system.md:\n   - \"You are Sonar, a voice-first investing tutor for blind learners\"\n   - \"Always use tools to get current data. Never answer from memory.\"\n   - \"All numbers in your reply MUST come from tool results in this turn.\"\n   - \"You teach, you don't give personalized advice.\"\n   - \"Describe shapes, never just colors.\"\n   - \"Keep sentences under 25 words for natural speech.\"\n6. Implement apps/web/app/api/talk/route.ts as the entry point:\n   - Receive transcript from STT\n   - Call tutor loop\n   - Return reply text and UI directives\n\nTool example:\n{\n  name: \"get_quote\",\n  description: \"Get current price for a symbol\",\n  parameters: {\n    type: \"object\",\n    properties: {\n      symbol: { type: \"string\", description: \"Stock symbol like AAPL or VOO\" }\n    },\n    required: [\"symbol\"]\n  },\n  execute: async ({ symbol }) => {\n    const res = await fetch(`${ENGINE_URL}/quote?symbol=${symbol}`);\n    return res.json();\n  }\n}",
@@ -404,9 +404,9 @@
           "7",
           "8"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-10-18T04:08:11.911Z",
+        "updatedAt": "2026-10-18T07:16:23.629Z",
         "tag": "backend",
         "metadata": {
           "moveHistory": [
@@ -419,7 +419,7 @@
         }
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Tutor Brain: Speech Style Filter and Guardrails",
         "description": "Implement the speech style filter that makes model output sound natural when spoken, and guardrails that ensure accuracy and safety (no invented numbers, no personalized advice, no claiming trades without confirmation).",
         "details": "Speech processing implementation:\n1. Create services/tutor/speechStyle.ts module\n2. Implement toSpeech(text) filter:\n   - Strip all markdown formatting (* ** # [] ())\n   - Split sentences longer than 25 words at natural breaks\n   - Convert numbers to speakable form: \"3.5%\" → \"about 3.5 percent\", \"$560\" → \"five hundred sixty dollars\"\n   - Describe visual shapes: \"the line rises steeply\" not \"the green line\"\n   - Append one-line risk disclaimer when returns are mentioned: \"Remember, prices can fall as well as rise.\"\n3. Create services/tutor/guardrails.ts module\n4. Implement checkReply(reply, toolLog) that:\n   - Extracts all numbers and percentages from reply text\n   - Verifies each number appears in tool results from this turn\n   - Blocks reply if any number is missing from tool log\n   - Triggers regeneration with additional prompt: \"Use only the data from your tool calls\"\n5. Add content guardrails:\n   - Detect requests for personalized advice (\"should I buy\", \"what stock is best for me\")\n   - Respond with education-only answer: \"Sonar teaches investing concepts. I can't recommend specific investments for your situation.\"\n   - Detect claims of completed trades without confirm_trade in tool log\n   - Block and correct: \"I cannot confirm that trade without seeing a confirmation in my records.\"\n6. Log all guardrail blocks for monitoring\n\nPseudo-code:\nfunction checkReply(reply: string, toolLog: ToolResult[]): CheckResult {\n  const numbersInReply = extractNumbers(reply); // [\"12\", \"3.5\", \"560\"]\n  const numbersInTools = toolLog.flatMap(extractNumbers); // from JSON results\n  \n  for (const num of numbersInReply) {\n    if (!numbersInTools.includes(num)) {\n      return { blocked: true, reason: `Number ${num} not found in tool results` };\n    }\n  }\n  \n  if (reply.includes(\"should\") && detectAdviceRequest(reply)) {\n    return { blocked: true, reason: \"Personalized advice detected\" };\n  }\n  \n  if (reply.match(/bought|sold|confirmed/i) && !toolLog.some(t => t.tool === 'confirm_trade')) {\n    return { blocked: true, reason: \"Trade claim without confirmation\" };\n  }\n  \n  return { blocked: false };\n}",
@@ -428,9 +428,9 @@
         "dependencies": [
           "10"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-10-18T04:08:22.074Z",
+        "updatedAt": "2026-10-18T07:16:23.631Z",
         "tag": "backend",
         "metadata": {
           "moveHistory": [
@@ -443,7 +443,7 @@
         }
       },
       {
-        "id": 12,
+        "id": "12",
         "title": "Lesson Engine: Curriculum Loader, Step Player, Quiz Engine, and Progress",
         "description": "Build the lesson engine that loads validated lesson JSON files, plays steps with data placeholder resolution, runs quizzes, and tracks learner progress.",
         "details": "Lesson engine implementation:\n1. Create services/lessons/ with loader.ts, player.ts, quiz.ts, progress.ts\n2. Implement loader.ts:\n   - Load all JSON files from services/lessons/content/*.json\n   - Validate each against lessonSchema on startup\n   - Extract and index all placeholders like {AAPL.pct_1m}\n   - Fail fast on validation errors with file name and issue\n3. Implement player.ts for step playback:\n   - playStep(lessonId, stepIndex) function\n   - Resolve data placeholders by calling appropriate tools at play time\n   - Fill placeholders in say text: \"{AAPL.pct_1m}\" → \"3.5\"\n   - Start TTS and chart drawing simultaneously\n   - End with instruction: \"Press N for the next step, or R to repeat\"\n   - N or right arrow advances, P or left arrow goes back\n4. Implement quiz.ts:\n   - gradeQuiz(lessonId, choice) function\n   - Accept number key 1-3 or spoken answer\n   - Match spoken answers to options with fuzzy matching\n   - Return correct: boolean, explanation: string\n   - On correct: play success chime, send double palm tap, update progress\n   - On incorrect: play wrong-answer tone, explain why, allow retry\n5. Implement progress.ts:\n   - Store in lesson_progress table: lesson_id, done, best_step, updated\n   - Also mirror to localStorage for offline persistence\n   - getProgress() returns completed lessons and next lesson\n   - updateProgress(lessonId, stepIndex) saves progress\n   - \"Up next\" and \"Done\" tags for lesson menu\n6. Handle placeholder resolution failures gracefully:\n   - If tool fails, speak step without the number\n   - Append: \"The current data is unavailable.\"\n7. Integrate with tutor loop via start_lesson and next_step tools\n\nPseudo-code:\nasync function playStep(lessonId: string, stepIdx: number) {\n  const lesson = lessons.find(l => l.id === lessonId);\n  const step = lesson.steps[stepIdx];\n  \n  // Resolve placeholders\n  let say = step.say;\n  if (step.data) {\n    const results = await Promise.all(step.data.map(d => callTool(d.tool, d.args)));\n    for (const [i, result] of results.entries()) {\n      const placeholder = extractPlaceholder(step.data[i]);\n      say = say.replace(`{${placeholder}}`, extractValue(result, placeholder));\n    }\n  }\n  \n  // Play narration and chart together\n  await Promise.all([\n    speak(say),\n    step.chart ? drawChart(step.chart) : Promise.resolve()\n  ]);\n  \n  announce(\"Press N for the next step, or R to repeat\");\n}",
@@ -453,9 +453,9 @@
           "3",
           "10"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-10-18T04:08:32.172Z",
+        "updatedAt": "2026-10-18T06:34:50.643Z",
         "tag": "backend",
         "metadata": {
           "moveHistory": [
@@ -468,14 +468,14 @@
         }
       },
       {
-        "id": 19,
+        "id": "19",
         "title": "Hardware: ESP32 Firmware with Inverse Kinematics, Motion Control, and Safety",
         "description": "Develop ESP32 firmware for the palm arm with on-device inverse kinematics, trapezoidal velocity profile, serial protocol handling, and safety limits including auto-lift and pressure constraints.",
         "details": "Firmware implementation:\n1. Create firmware/palm-arm/ directory with Arduino C++ code\n2. File structure:\n   - palm_arm.ino (main loop and serial handling)\n   - ik.h (inverse kinematics solver)\n   - motion.h (trapezoidal velocity profile)\n   - protocol.h (serial command parsing)\n3. Implement IK solver on ESP32:\n   - Same algorithm as in palm scene (task 16)\n   - Calculate shoulder and elbow angles from target (x, y)\n   - Apply joint angle soft limits: shoulder [0°, 180°], elbow [0°, 135°]\n   - Reject targets outside reachable workspace\n4. Implement trapezoidal velocity profile:\n   - Acceleration phase: linear ramp up\n   - Constant velocity phase: max 4 cm/s\n   - Deceleration phase: linear ramp down\n   - Prevents jerky motion and reduces stress on servos\n5. Implement serial protocol (115200 baud):\n   - Commands from bridge:\n     - H: home position and lift pen\n     - P0: pen up (lift servo to raised position)\n     - P1: pen down (lift servo presses gently)\n     - M x y: move to position (x, y in [0, 1] normalized coords)\n     - T ms: tap for specified duration\n     - W ms: wait/pause for specified duration\n     - F n: set force level 1-5 (1=lightest, 5=max allowed)\n   - Responses to computer:\n     - OK: command succeeded\n     - ERR code: command failed (e.g., ERR_TIMEOUT, ERR_LIMIT)\n6. Implement safety features:\n   - Maximum pressure level 5 enforced in firmware (cannot be exceeded)\n   - Auto-lift after 3 seconds of no commands (prevents prolonged pressure)\n   - Soft inkless stylus (hardware choice)\n   - Emergency stop on invalid commands\n7. Map normalized coordinates to physical workspace:\n   - Drawing box: 6cm x 4cm on palm\n   - Origin at top-left of box\n   - Apply workspace-to-joint transformation\n8. Servo control:\n   - 3 servos: shoulder joint, elbow joint, pen lift\n   - Use Servo.h library or ESP32 LEDC for PWM\n   - Smooth interpolation between positions\n9. Startup behavior:\n   - Home all servos to known position\n   - Lift pen\n   - Send ready signal over serial\n10. Error handling:\n    - Watchdog timer for firmware hangs\n    - Return ERR codes for invalid positions, timeouts\n\nArduino pseudo-code:\n#include <Servo.h>\n#include \"ik.h\"\n#include \"motion.h\"\n#include \"protocol.h\"\n\nServo shoulder, elbow, lift;\nvoid setup() {\n  Serial.begin(115200);\n  shoulder.attach(SHOULDER_PIN);\n  elbow.attach(ELBOW_PIN);\n  lift.attach(LIFT_PIN);\n  home();\n  Serial.println(\"OK\");\n}\n\nvoid loop() {\n  if (Serial.available()) {\n    String cmd = Serial.readStringUntil('\\n');\n    handleCommand(cmd);\n  }\n  checkAutoLift(); // lift after 3s idle\n}\n\nvoid handleCommand(String cmd) {\n  if (cmd[0] == 'M') {\n    float x, y;\n    sscanf(cmd.c_str(), \"M %f %f\", &x, &y);\n    auto angles = solveIK(x * 60, y * 40); // mm\n    moveTo(angles.shoulder, angles.elbow);\n    Serial.println(\"OK\");\n  }\n  // ... other commands\n}",
         "testStrategy": "Bench test with ruler: Send M commands for a 12-point line, measure actual drawing is within 2mm of 6x4cm box. Test auto-lift: send M command, wait 3s, verify pen lifts. Test pressure: set F 5, verify stylus doesn't press too hard (subjective feel). Test homing: power cycle, verify arm returns to known position. Test serial protocol: send H, P0, M 0.5 0.5, P1, P0 sequence, verify each returns OK. Test invalid command returns ERR. Measure max speed doesn't exceed 4 cm/s.",
         "priority": "medium",
         "dependencies": [],
-        "status": "pending",
+        "status": "review",
         "subtasks": [],
         "tag": "backend",
         "metadata": {
@@ -486,10 +486,11 @@
               "timestamp": "2026-10-18T05:30:53.247Z"
             }
           ]
-        }
+        },
+        "updatedAt": "2026-10-18T06:44:18.199Z"
       },
       {
-        "id": 20,
+        "id": "20",
         "title": "Hardware Bridge: Arm Path Planner and Web Serial Connection",
         "description": "Build the bridge between the palm scene chart operations and the physical arm, including path planning (chart ops to serial commands) and Web Serial API connection. Ensure on-screen and physical arm move in sync.",
         "details": "Arm bridge implementation:\n1. Create bridge/serial/ module with planner.ts and webserial.ts\n2. Implement planner.ts to convert chart operations to serial commands:\n   - Input: ChartOps {points: number[], taps: number[], pauses: number[]}\n   - Output: string[] of serial commands\n   - Algorithm:\n     - H (home and lift)\n     - For each stroke (series of connected points):\n       - P0 (pen up)\n       - M x y (move to first point)\n       - P1 (pen down)\n       - For each subsequent point: M x y\n       - P0 (pen up)\n     - For each tap marker:\n       - P0, M x y (move to tap position)\n       - T 200 (tap for 200ms)\n     - W 500 (wait before next operation)\n   - Normalize points from [0, 1] to drawing box coordinates\n   - Cap speed at 4 cm/s by inserting intermediate waypoints if needed\n3. Implement webserial.ts for Web Serial API:\n   - connectArm() function to request port and connect at 115200 baud\n   - disconnectArm() function\n   - send(commands: string[]) function that:\n     - Sends each command\n     - Waits for OK or ERR response\n     - Logs errors\n     - Returns success/failure status\n   - Monitor connection status (connected/disconnected)\n4. Integrate with palm scene:\n   - When chart operations are sent to palm scene:\n     - If arm is connected, also send to physical arm via bridge\n     - On-screen animation and physical drawing start simultaneously\n     - Track sync: physical should be within 200ms of on-screen\n5. Handle connection errors gracefully:\n   - If send fails, mark arm as disconnected\n   - Show notification: \"Palm arm disconnected\"\n   - Continue with on-screen visualization only\n   - Sonification automatically activates (from task 17)\n6. Settings integration:\n   - Settings menu has \"Palm arm: Connect / Disconnect\" option\n   - Connect triggers Web Serial port picker\n   - Disconnect closes serial port\n   - Store connection preference in localStorage\n7. Permissions:\n   - Web Serial requires HTTPS or localhost\n   - User gesture required to request port\n8. Telemetry (optional, stretch):\n   - Receive position updates from arm\n   - Display on palm scene for debugging\n\nPlanner pseudo-code:\nfunction plan(chartOps: ChartOps): string[] {\n  const commands: string[] = ['H']; // home\n  \n  // Draw main series\n  if (chartOps.points.length > 0) {\n    commands.push('P0'); // pen up\n    commands.push(`M ${chartOps.points[0].x} ${chartOps.points[0].y}`);\n    commands.push('P1'); // pen down\n    \n    for (let i = 1; i < chartOps.points.length; i++) {\n      commands.push(`M ${chartOps.points[i].x} ${chartOps.points[i].y}`);\n    }\n    \n    commands.push('P0'); // pen up\n  }\n  \n  // Add taps\n  for (const tap of chartOps.taps) {\n    commands.push(`M ${tap.x} ${tap.y}`);\n    commands.push('T 200'); // tap for 200ms\n  }\n  \n  return commands;\n}\n\nCross-team dependencies:\n- Task 16 in the frontend tag: Chart Output: Realistic Palm Scene with Hand, Arm IK, and Animated Trace",
@@ -498,7 +499,7 @@
         "dependencies": [
           "19"
         ],
-        "status": "pending",
+        "status": "review",
         "subtasks": [],
         "tag": "backend",
         "metadata": {
@@ -509,10 +510,11 @@
               "timestamp": "2026-10-18T05:30:53.247Z"
             }
           ]
-        }
+        },
+        "updatedAt": "2026-10-18T06:44:18.202Z"
       },
       {
-        "id": 24,
+        "id": "24",
         "title": "Stretch Goal: Options Basics Lesson and Market Module",
         "description": "Implement lesson 6 (Options basics) with visualization of call and put payoff diagrams, and add options market module to the trading engine. Only if time permits after all P0/P1 tasks are complete.",
         "details": "Options implementation (stretch):\n1. Complete lesson 6 content (6-options-basics.json already exists):\n   - 3 steps: buying a call, buying a put, time decay\n   - Quiz on maximum loss\n2. Implement options-specific visualizations:\n   - Hockey stick payoff diagram for calls and puts\n   - Zero line (dashed) as reference\n   - Break-even point marked with tap\n   - Time decay curve showing value erosion\n3. Create services/engine/markets/options.py:\n   - Simplified options pricing (Black-Scholes or fixed premiums)\n   - Call and put contracts\n   - Expiration dates\n   - Strike prices\n4. Add options tools:\n   - get_option_quote(symbol, strike, expiry, type)\n   - propose_option_trade(side, contract, qty)\n   - Calculate P&L for educational purposes\n5. Update UI for options:\n   - Show strike, expiry, premium in proposal\n   - Explain max loss vs max gain clearly\n   - Warning: \"Most beginners lose money on options. Use practice money only.\"\n6. Integrate lesson 6 into menu and progress tracking\n\nNote: This is P2 priority. Only implement if:\n- All P0 and P1 tasks are complete and tested\n- At least 4 hours remain before code freeze\n- Core demo flow is rock solid\n\nIf time is short, skip this and focus on polish and testing.\n\nCross-team dependencies:\n- Task 15 in the frontend tag: UI Components: Answer Card, Lesson Header, and Quiz Options\n- Task 22 in the shared tag: Integration Testing: End-to-End Demo Flow with Eyes-Closed Test",
@@ -524,7 +526,7 @@
           "10",
           "12"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [],
         "tag": "backend",
         "metadata": {
@@ -535,13 +537,18 @@
               "timestamp": "2026-10-18T05:30:53.247Z"
             }
           ]
-        }
+        },
+        "updatedAt": "2026-10-18T06:44:16.311Z"
       }
     ],
     "metadata": {
-      "created": "2026-10-18T05:30:18.859Z",
-      "updated": "2026-10-18T05:30:18.859Z",
-      "description": "Engine, data, chain, tutor brain, lessons, firmware, arm bridge (backend/)"
+      "version": "1.0.0",
+      "lastModified": "2026-10-18T07:16:23.631Z",
+      "taskCount": 12,
+      "completedCount": 10,
+      "tags": [
+        "backend"
+      ]
     }
   },
   "shared": {

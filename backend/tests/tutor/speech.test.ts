@@ -12,7 +12,7 @@ import { ADVICE_REQUEST, checkReply, dropUnverified, extractNumbers, type ToolLo
 
 describe("toSpeech", () => {
   it("matches the task's example exactly", () => {
-    expect(toSpeech("VOO is up 12%")).toBe("VOO is up about 12 percent. Remember, prices can fall as well as rise.".replace(". Remember", " Remember"));
+    expect(toSpeech("VOO is up 12%")).toBe("VOO is up about 12 percent. Remember, prices can fall as well as rise.");
   });
 
   it("strips markdown", () => {
@@ -80,6 +80,12 @@ describe("guardrails", () => {
     expect(ADVICE_REQUEST.test("Should I buy NVDA?")).toBe(true);
     expect(ADVICE_REQUEST.test("What is an ETF?")).toBe(false);
     expect(checkReply("You should buy NVDA now.", []).reasons).toContain("Personalized advice detected");
+  });
+
+  it("reads 'N dollars and M cents' as one amount", () => {
+    const tools = [log("run_backtest", { end_value: 1178.75 })];
+    expect(checkReply("It would be worth 1178 dollars and 75 cents now.", tools).ok).toBe(true);
+    expect(checkReply("It would be worth 1,178 dollars and 5 cents now.", tools).unverified).toEqual(["$1,178.05"]);
   });
 
   it("blocks trade claims without a confirmed trade", () => {

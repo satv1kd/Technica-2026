@@ -6,8 +6,12 @@
  *   npm run test:db
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { newClient } from "@services/data/db";
+import { newClient, newPool } from "@services/data/db";
 import { migrate, refreshCandles } from "@services/data/migrate";
+import { loadCurriculum } from "@services/lessons/loader";
+import { DbProgress, nextLesson } from "@services/lessons/progress";
+import { runAction, type TutorDeps } from "@services/tutor/loop";
+import { buildRegistry } from "@services/tutor/tools";
 
 const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const SYMBOL = "TEST_SONAR";
@@ -43,7 +47,10 @@ describe.skipIf(!url)("TimescaleDB schema", () => {
   afterAll(async () => {
     await client.query("DELETE FROM prices WHERE symbol = $1", [SYMBOL]);
     await refreshCandles(client);
-    if (accountId) await client.query("DELETE FROM accounts WHERE id = $1", [accountId]);
+    if (accountId) {
+      await client.query("DELETE FROM learning_events WHERE account_id = $1", [accountId]);
+      await client.query("DELETE FROM accounts WHERE id = $1", [accountId]);
+    }
     await client.end();
   }, 120_000);
 
@@ -121,4 +128,31 @@ describe.skipIf(!url)("TimescaleDB schema", () => {
     expect(rows[0].symbols).toBeGreaterThanOrEqual(6);
     expect(rows[0].n).toBeGreaterThanOrEqual(3000);
   });
+
+  it("finishing lesson 1 saves progress to the database, and reset hides it", async () => {
+    const pool = newPool(url!, 2);
+    try {
+      const progress = new DbProgress(pool, async () => accountId);
+      const lessons = loadCurriculum();
+      const deps: TutorDeps = {
+        generate: async () => { throw new Error("lessons never call the model"); },
+        engine: async () => { throw new Error("lesson 1 needs no market data"); },
+        lessons, progress, registry: buildRegistry(),
+      };
+      let r = await runAction(deps, { type: "start_lesson", lesson: "feel-a-graph" });
+      while (!r.state.quiz) r = await runAction(deps, { type: "next" }, r.state);
+      const graded = await runAction(deps, { type: "quiz_answer", choice: "the right side" }, r.state);
+      expect(graded.reply).toMatch(/^That's right/);
+
+      // A fresh store reads it back from Tiger Data, not from memory.
+      const saved = await new DbProgress(pool, async () => accountId).get();
+      expect(saved["feel-a-graph"]).toEqual({ done: true, bestStep: 2 });
+      expect(nextLesson(lessons, saved)).toBe("etf");
+
+      await progress.reset();
+      expect(await progress.get()).toEqual({});
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
 });

@@ -1,7 +1,7 @@
 /**
  * Text to speech, server side.
  *
- * ElevenLabs streaming is primary; Gemini TTS is the fallback; if both fail
+ * ElevenLabs streaming is primary; OpenAI TTS is the fallback; if both fail
  * the route answers 503 and the browser uses speechSynthesis.
  *
  * Every clip is cached on disk by (provider, voice, speed, text). The free
@@ -17,7 +17,7 @@ export type Speed = "slow" | "normal" | "fast";
 export const SPEEDS: Record<Speed, number> = { slow: 0.85, normal: 1.0, fast: 1.15 };
 
 export interface TtsResult {
-  provider: "elevenlabs" | "gemini" | "cache";
+  provider: "elevenlabs" | "openai" | "cache";
   contentType: string;
   /** Stream for live ElevenLabs audio, bytes otherwise. */
   body: ReadableStream<Uint8Array> | Uint8Array;
@@ -26,8 +26,9 @@ export interface TtsResult {
 export interface TtsConfig {
   elevenKey?: string;
   voiceId: string;
-  geminiKey?: string;
-  geminiModels: string[];
+  openaiKey?: string;
+  openaiModel?: string;
+  openaiVoice?: string;
   cacheDir?: string;
   fetchImpl?: typeof fetch;
 }
@@ -49,25 +50,6 @@ function readCache(dir: string, keys: string[]): TtsResult | null {
     if (fs.existsSync(wav)) return { provider: "cache", contentType: "audio/wav", body: fs.readFileSync(wav) };
   }
   return null;
-}
-
-/** Wrap 16-bit little-endian mono PCM (Gemini's output) in a WAV header. */
-export function pcmToWav(pcm: Uint8Array, sampleRate = 24_000): Uint8Array {
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcm.length, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(1, 22); // mono
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * 2, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([header, Buffer.from(pcm)]);
 }
 
 /** Pass a stream through while saving it to the cache once it completes. */
@@ -106,35 +88,29 @@ async function elevenlabs(cfg: TtsConfig, text: string, speed: Speed, file: stri
   return { provider: "elevenlabs", contentType: "audio/mpeg", body: teeToFile(res.body, file) };
 }
 
-async function gemini(cfg: TtsConfig, text: string, speed: Speed, file: string): Promise<TtsResult> {
+export const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
+export const OPENAI_VOICE = "sage";
+
+async function openai(cfg: TtsConfig, text: string, speed: Speed, file: string): Promise<TtsResult> {
   const f = cfg.fetchImpl ?? fetch;
   const pace = speed === "slow" ? " Speak a little slower." : speed === "fast" ? " Speak a little faster." : "";
-  let last = "no Gemini TTS model configured";
-  for (const model of cfg.geminiModels) {
-    const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "x-goog-api-key": cfg.geminiKey!, "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${STYLE_PROMPT}${pace} ${text}` }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Sulafat" } } },
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const body = await res.json().catch(() => ({}));
-    const data = body?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (res.ok && data) {
-      const wav = pcmToWav(Buffer.from(data, "base64"));
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, wav);
-      return { provider: "gemini", contentType: "audio/wav", body: wav };
-    }
-    last = `${model} ${res.status}: ${body?.error?.message ?? "no audio"}`;
-    if (res.status !== 404) break; // only a missing model is worth trying the next name
-  }
-  throw new Error(`Gemini TTS failed: ${last}`);
+  const res = await f("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: { authorization: `Bearer ${cfg.openaiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: cfg.openaiModel ?? OPENAI_TTS_MODEL,
+      voice: cfg.openaiVoice ?? OPENAI_VOICE,
+      input: text,
+      instructions: `${STYLE_PROMPT.replace(/:$/, ".")}${pace}`,
+      response_format: "mp3",
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`OpenAI TTS ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const mp3 = new Uint8Array(await res.arrayBuffer());
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, mp3);
+  return { provider: "openai", contentType: "audio/mpeg", body: mp3 };
 }
 
 export async function synthesize(
@@ -145,20 +121,20 @@ export async function synthesize(
 ): Promise<TtsResult | null> {
   const dir = cfg.cacheDir ?? repoPath("data", "tts-cache");
   const elevenKey = cacheKey("elevenlabs", cfg.voiceId, speed, text);
-  const geminiKey = cacheKey("gemini", "Sulafat", speed, text);
-  const cached = readCache(dir, [elevenKey, geminiKey]);
+  const openaiKey = cacheKey("openai", cfg.openaiVoice ?? OPENAI_VOICE, speed, text);
+  const cached = readCache(dir, [elevenKey, openaiKey]);
   if (cached) return cached;
 
   if (cfg.elevenKey) {
     try {
       return await elevenlabs(cfg, text, speed, cachePaths(dir, elevenKey).mp3);
     } catch (err) {
-      log(`[tts] ElevenLabs failed, trying Gemini: ${(err as Error).message}`);
+      log(`[tts] ElevenLabs failed, trying OpenAI: ${(err as Error).message}`);
     }
   }
-  if (cfg.geminiKey) {
+  if (cfg.openaiKey) {
     try {
-      return await gemini(cfg, text, speed, cachePaths(dir, geminiKey).wav);
+      return await openai(cfg, text, speed, cachePaths(dir, openaiKey).mp3);
     } catch (err) {
       log(`[tts] ${(err as Error).message}`);
     }

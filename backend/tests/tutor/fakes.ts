@@ -1,6 +1,6 @@
 import type { EngineFetch } from "@services/tutor/engine";
 import { EngineError } from "@services/tutor/engine";
-import type { Generate, GenerateRequest, Part } from "@services/tutor/gemini";
+import type { Generate, GenerateRequest, Part } from "@services/tutor/llm";
 import { loadCurriculum } from "@services/lessons/loader";
 import { MemoryProgress } from "@services/lessons/progress";
 import { buildRegistry } from "@services/tutor/tools";

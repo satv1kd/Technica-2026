@@ -43,16 +43,21 @@ class Proposal:
     as_of: str
     price_note: str
     risk_note: str
+    order_text: str | None = None
 
     @property
     def readback(self) -> str:
         f = self.fill
-        unit = "token" if f.asset_class == "tokenized" else "share"
-        qty = f.quantity.normalize()
-        units = unit if qty == 1 else unit + "s"
         verb = "Buy" if f.side == "buy" else "Sell"
+        if self.order_text:
+            what = self.order_text
+        else:
+            unit = "token" if f.asset_class == "tokenized" else "share"
+            qty = f.quantity.normalize()
+            units = unit if qty == 1 else unit + "s"
+            what = f"{qty:f} {units} of {f.symbol} at {f.price:,.2f} dollars each"
         return (
-            f"{verb} {qty:f} {units} of {f.symbol} at {f.price:,.2f} dollars each, "
+            f"{verb} {what}, "
             f"{f.total:,.2f} dollars total. {self.risk_note} "
             f"This is practice money. Press Enter or say confirm to place it, or Escape to cancel."
         )
@@ -93,6 +98,7 @@ class TradeDesk:
         qty = _parse_quantity(quantity, market.fractional, symbol)
 
         fill = market.fill(side, symbol, qty)
+        symbol = fill.symbol  # canonical name, e.g. an option strike "350.0" becomes "350"
         # Early, friendly checks. The ledger re-checks atomically on confirm.
         if side == "buy":
             cash = self.ledger.cash()
@@ -114,6 +120,7 @@ class TradeDesk:
             as_of=quote.as_of.isoformat(),
             price_note=price_note(now, quote.as_of),
             risk_note=market.risk_note_for(symbol),
+            order_text=market.order_text(fill),
         )
         with self._lock:
             self._prune(now)
