@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import type { ChartOps, Pt } from "../../../backend/services/chart/ops";
-import { View, drawArm, drawHand, drawTrace, type Ripple, type TraceLine } from "../lib/palm/draw";
-import { HOME, boxToCm, solveIK, timeline, type Joints, type Segment } from "../lib/palm/motion";
+import { View, drawArm, drawBase, drawHand, drawTrace, type Ripple, type TraceLine } from "../lib/palm/draw";
+import { HOME, boxToCm, breathe, solveIK, timeline, type Joints, type Segment } from "../lib/palm/motion";
 
 export type PalmStatus = "idle" | "drawing" | "finished";
 
@@ -60,6 +60,7 @@ export function PalmScene({ chart, playKey, onStatus, onTap }: Props) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const still = reducedMotion();
 
+    let raf = 0;
     const resize = () => {
       const r = canvas.getBoundingClientRect();
       canvas.width = Math.round(r.width * dpr);
@@ -67,7 +68,12 @@ export function PalmScene({ chart, playKey, onStatus, onTap }: Props) {
       handCache.current = null;
     };
     resize();
-    const ro = new ResizeObserver(resize);
+    // Resizing a canvas clears it. Animated scenes repaint next frame anyway;
+    // a still (reduced-motion) scene must repaint explicitly.
+    const ro = new ResizeObserver(() => {
+      resize();
+      if (still) raf = requestAnimationFrame(frame);
+    });
     ro.observe(canvas);
 
     const plan = chart ? timeline(chart) : { segments: [], duration: 0 };
@@ -87,7 +93,6 @@ export function PalmScene({ chart, playKey, onStatus, onTap }: Props) {
       }
     }
 
-    let raf = 0;
     const frame = (now: number) => {
       const w = canvas.width, h = canvas.height;
       const v = new View(w, h);
@@ -95,7 +100,9 @@ export function PalmScene({ chart, playKey, onStatus, onTap }: Props) {
         const off = document.createElement("canvas");
         off.width = w;
         off.height = h;
-        drawHand(off.getContext("2d")!, v);
+        const octx = off.getContext("2d")!;
+        drawHand(octx, v);
+        drawBase(octx, v);
         handCache.current = { canvas: off, w, h };
       }
       const t = still ? plan.duration : (now - t0) / 1000;
@@ -120,10 +127,10 @@ export function PalmScene({ chart, playKey, onStatus, onTap }: Props) {
       }
 
       // Idle breathing: the hand rises and settles about 1.5 px every 4 s.
-      const breathe = still ? 0 : Math.sin((now / 4000) * Math.PI * 2) * 1.5 * dpr;
+      const sway = still ? 0 : breathe(now) * dpr;
       ctx.clearRect(0, 0, w, h);
       ctx.save();
-      ctx.translate(0, breathe);
+      ctx.translate(0, sway);
       ctx.drawImage(handCache.current.canvas, 0, 0);
       drawTrace(ctx, v, lines, ripples, now);
       ctx.restore();

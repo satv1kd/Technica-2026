@@ -48,3 +48,29 @@ const SIZES: TextSize[] = ["standard", "large", "xl"];
 export const nextSpeed = (s: Speed) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length];
 export const nextSize = (s: TextSize) => SIZES[(SIZES.indexOf(s) + 1) % SIZES.length];
 export const sizeName = (s: TextSize) => (s === "xl" ? "extra large" : s);
+
+export type SettingKey = "speed" | "chartSounds" | "textSize";
+
+/** Change one setting and say what changed ("Speaking speed is now fast"). */
+export function toggleSetting(s: Settings, key: SettingKey): { settings: Settings; say: string } {
+  switch (key) {
+    case "speed": {
+      const speed = nextSpeed(s.speed);
+      return { settings: { ...s, speed }, say: `Speaking speed is now ${speed}.` };
+    }
+    case "chartSounds": {
+      const chartSounds = !s.chartSounds;
+      return { settings: { ...s, chartSounds }, say: `Chart sounds are now ${chartSounds ? "on" : "off"}.` };
+    }
+    case "textSize": {
+      const textSize = nextSize(s.textSize);
+      return { settings: { ...s, textSize }, say: `Text size is now ${sizeName(textSize)}.` };
+    }
+  }
+}
+
+export function applyTextSize(size: TextSize) {
+  if (typeof document !== "undefined") {
+    document.documentElement.style.setProperty("--text-scale", String(TEXT_SCALE[size]));
+  }
+}

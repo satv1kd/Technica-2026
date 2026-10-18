@@ -115,3 +115,11 @@ export function sonify(chart: ChartOps): Promise<void> {
     stopCurrent = stop;
   });
 }
+
+/**
+ * Charts play as sound automatically when the learner turned chart sounds on,
+ * or when no palm arm is connected (sound is then the only non-visual output).
+ */
+export function shouldAutoSonify(settings: { chartSounds: boolean }, armConnected: boolean): boolean {
+  return settings.chartSounds || !armConnected;
+}

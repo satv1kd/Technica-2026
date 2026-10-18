@@ -130,3 +130,29 @@ describe("serial planner", () => {
     expect(cmds.filter((c) => c === "P0").length).toBeGreaterThan(1);
   });
 });
+
+describe("palm scene details", () => {
+  it("breathing stays within 1.5 px and repeats every 4 s", async () => {
+    const { breathe, BREATHE_PERIOD_MS } = await import("@web/lib/palm/motion");
+    let max = 0;
+    for (let t = 0; t < 8000; t += 25) max = Math.max(max, Math.abs(breathe(t)));
+    expect(max).toBeGreaterThan(1);
+    expect(max).toBeLessThanOrEqual(2);
+    expect(breathe(1000)).toBeCloseTo(breathe(1000 + BREATHE_PERIOD_MS), 9);
+  });
+
+  it("traces fade by 30% after 10 seconds", async () => {
+    const { traceFade } = await import("@web/lib/palm/draw");
+    expect(traceFade(9_999)).toBe(1);
+    expect(traceFade(10_001)).toBe(0.7);
+  });
+});
+
+describe("sonification autoplay", () => {
+  it("plays when chart sounds are on or no arm is connected", async () => {
+    const { shouldAutoSonify } = await import("@web/lib/palm/sonify");
+    expect(shouldAutoSonify({ chartSounds: false }, false)).toBe(true);
+    expect(shouldAutoSonify({ chartSounds: true }, true)).toBe(true);
+    expect(shouldAutoSonify({ chartSounds: false }, true)).toBe(false);
+  });
+});

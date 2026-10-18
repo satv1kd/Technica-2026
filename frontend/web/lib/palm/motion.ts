@@ -137,3 +137,10 @@ export function timeline(chart: ChartOps): { segments: Segment[]; duration: numb
   travel(HOME, "up");
   return { segments, duration: t };
 }
+
+/** Idle breathing: the hand rises and settles about 1.5 px every 4 s. */
+export const BREATHE_PX = 1.5;
+export const BREATHE_PERIOD_MS = 4000;
+export function breathe(nowMs: number): number {
+  return Math.sin((nowMs / BREATHE_PERIOD_MS) * Math.PI * 2) * BREATHE_PX;
+}

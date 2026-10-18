@@ -24,6 +24,19 @@ export interface Menu {
   items: MenuItem[]; // numbered 1..n; submenus also get "0 Back"
 }
 
+export interface GeminiOption {
+  label: string;
+  say: string;
+}
+
+export const GEMINI_TAG = "Options from Gemini";
+
+/** What a number key does in a menu: an item, back (0), or nothing. */
+export function menuChoice(menu: Menu, n: number): MenuItem | "back" | null {
+  if (n === 0) return menu.id === "main" ? null : "back";
+  return menu.items[n - 1] ?? null;
+}
+
 export interface LessonInfo {
   number: number;
   id: string;
@@ -47,7 +60,14 @@ export function lessonTag(l: LessonInfo): string | undefined {
 
 export function buildMenu(
   id: MenuId,
-  ctx: { lessons: LessonInfo[]; settings: Settings; armConnected: boolean; armSupported: boolean },
+  ctx: {
+    lessons: LessonInfo[];
+    settings: Settings;
+    armConnected: boolean;
+    armSupported: boolean;
+    /** One context-aware suggestion from the tutor's suggest_options tool. */
+    gemini?: GeminiOption | null;
+  },
 ): Menu {
   switch (id) {
     case "main":
@@ -59,6 +79,7 @@ export function buildMenu(
           { label: "Practice trading", cmd: { kind: "submenu", id: "practice" } },
           { label: "Settings", cmd: { kind: "submenu", id: "settings" } },
           { label: "Help", cmd: { kind: "help" } },
+          ...(ctx.gemini ? [{ label: ctx.gemini.label, tag: GEMINI_TAG, cmd: { kind: "ask" as const, text: ctx.gemini.say } }] : []),
         ],
       };
     case "lessons":

@@ -22,7 +22,8 @@ export type AppEvent =
   | { type: "PREV" }
   | { type: "CONFIRM" }
   | { type: "CANCEL" }
-  | { type: "SETTLED" };
+  /** Settling finished; return to the lesson if the trade was part of one. */
+  | { type: "SETTLED"; to?: "answer" | "lesson" };
 
 export const MIN_HOLD_MS = 250;
 
@@ -52,6 +53,6 @@ export function transition(state: AppState, event: AppEvent): AppState {
     case "CANCEL":
       return state === "confirm" ? "answer" : state === "listening" ? "menu" : state;
     case "SETTLED":
-      return state === "settling" ? "answer" : state;
+      return state === "settling" ? event.to ?? "answer" : state;
   }
 }

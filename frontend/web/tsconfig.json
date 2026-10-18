@@ -13,10 +13,11 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    "../../backend/services/**/*.ts",
     "../../backend/bridge/**/*.ts",
+    "../../backend/services/**/*.ts",
+    ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next/types/**/*.ts"
+    ".next-e2e/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
