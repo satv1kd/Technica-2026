@@ -1,0 +1,33 @@
+{
+  "id": "feel-a-graph",
+  "title": "How to feel a graph",
+  "steps": [
+    {
+      "id": "feel-1",
+      "title": "Left to right",
+      "say": "Rest your hand palm up. I'll draw a slow line from left to right. Left is the past. Right is today.",
+      "chart": { "series": [], "shape": "flat" },
+      "alt": "A flat line across the palm from left to right."
+    },
+    {
+      "id": "feel-2",
+      "title": "Up means up",
+      "say": "Now a line that climbs. When the line moves up, the price went up.",
+      "chart": { "series": [], "shape": "rising" },
+      "alt": "A rising diagonal line."
+    },
+    {
+      "id": "feel-3",
+      "title": "The tap",
+      "say": "Feel that tap? A tap always means something important happened, like a peak or a finished trade.",
+      "chart": { "series": [], "shape": "tap-center" },
+      "alt": "One tap in the center of the palm."
+    }
+  ],
+  "quiz": {
+    "q": "Where on your palm is today?",
+    "options": ["The left side", "The right side", "The center"],
+    "answer": 1,
+    "why": "Drawings always move from the past on the left to today on the right."
+  }
+}

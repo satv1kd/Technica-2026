@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "jsx": "preserve",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@services/*": ["services/*"],
+      "@web/*": ["apps/web/*"]
+    }
+  },
+  "include": ["services/**/*.ts", "apps/web/**/*.ts", "apps/web/**/*.tsx", "tests/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "backtest",
+  "title": "What if? Backtesting and risk",
+  "steps": [
+    {
+      "id": "bt-1",
+      "title": "The question",
+      "say": "Let's ask: what if you'd put 1,000 dollars into VOO a year ago?"
+    },
+    {
+      "id": "bt-2",
+      "title": "The result",
+      "say": "It would be worth {end_value} today, a change of {return_pct} percent.",
+      "data": [{ "tool": "run_backtest", "args": { "symbol": "VOO", "amount": 1000, "start": "1y" } }],
+      "chart": { "series": ["VOO"], "smooth": "sma20", "points": 12, "markers": ["end"] },
+      "alt": "The year's line with a tap at the end."
+    },
+    {
+      "id": "bt-3",
+      "title": "The worst drop",
+      "say": "The biggest fall along the way was {max_dd} percent, around {dd_date}. Feel the dip. Holding through drops like this is the hard part.",
+      "data": [{ "tool": "run_backtest", "args": { "symbol": "VOO", "amount": 1000, "start": "1y" } }],
+      "chart": { "series": ["VOO"], "smooth": "sma20", "points": 12, "markers": ["trough"] },
+      "alt": "The line with a tap at its lowest point."
+    },
+    {
+      "id": "bt-4",
+      "title": "Past is not a promise",
+      "say": "This tells you what happened, not what will happen. Prices can fall as well as rise."
+    }
+  ],
+  "quiz": {
+    "q": "What does a backtest tell you?",
+    "options": ["What happened in the past", "What will happen next year", "Which stock to buy"],
+    "answer": 0,
+    "why": "A backtest replays history. It cannot predict the future."
+  }
+}

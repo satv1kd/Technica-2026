@@ -1,0 +1,45 @@
+{
+  "id": "etf",
+  "title": "Stocks vs. ETFs",
+  "steps": [
+    {
+      "id": "etf-1",
+      "title": "One stock's trend",
+      "say": "Here's Apple over the last month, smoothed with a 5-day average. It's {AAPL.dir_1m} about {AAPL.pct_1m} percent. The tap marks its highest point.",
+      "data": [{ "tool": "get_price_history", "args": { "symbol": "AAPL", "range": "1m" } }],
+      "chart": { "series": ["AAPL"], "smooth": "sma5", "points": 12, "markers": ["peak"] },
+      "alt": "Apple trend line with a tap at its peak."
+    },
+    {
+      "id": "etf-2",
+      "title": "What an ETF is",
+      "say": "An ETF is one share that holds many companies. VOO holds the 500 largest US companies, so you own a tiny slice of each.",
+      "alt": "A chord of tones, no drawing."
+    },
+    {
+      "id": "etf-3",
+      "title": "Feel the difference",
+      "say": "First Apple on its own, then VOO on the same scale. The second line barely moves. That smoothing is diversification.",
+      "data": [
+        { "tool": "get_price_history", "args": { "symbol": "AAPL", "range": "1m" } },
+        { "tool": "get_price_history", "args": { "symbol": "VOO", "range": "1m" } }
+      ],
+      "chart": { "series": ["AAPL", "VOO"], "smooth": "sma5", "points": 12 },
+      "alt": "Apple as a solid line, then VOO as a dashed line on the same scale."
+    },
+    {
+      "id": "etf-4",
+      "title": "Fees add up",
+      "say": "Two funds with the same returns but different yearly fees, over 30 years. The 1 percent fee leaves you about a quarter less than VOO's 0.03 percent.",
+      "data": [{ "tool": "explain_fees", "args": { "low_fee": 0.03, "high_fee": 1.0, "years": 30 } }],
+      "chart": { "series": ["fee-low", "fee-high"], "points": 12 },
+      "alt": "Two growth curves, the low-fee one ending higher."
+    }
+  ],
+  "quiz": {
+    "q": "Which usually moves more in a day: one stock, or a broad ETF?",
+    "options": ["One stock", "A broad ETF", "They move the same"],
+    "answer": 0,
+    "why": "An ETF spreads your money across many companies."
+  }
+}

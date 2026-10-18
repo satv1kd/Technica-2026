@@ -1,0 +1,365 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Foundation: Project Infrastructure and Configuration",
+        "description": "Set up monorepo structure, environment loading, secrets validation, and .env.example file. Ensure the app fails fast with clear messages when required API keys are missing.",
+        "details": "Complete foundation setup:\n1. Verify monorepo structure with workspaces configured in root package.json\n2. Create .env.example with all required keys: GEMINI_API_KEY, ELEVENLABS_API_KEY, DATABASE_URL, and optional keys (ALPACA_KEY_ID, ALPACA_SECRET_KEY, SOLANA_RPC_URL, etc.)\n3. Ensure services/config/index.ts is production-ready with proper Zod validation\n4. Add .gitignore rules for .env, node_modules, .next, dist\n5. Document setup steps in README.md\n6. Verify loadConfig() throws ConfigError with missing key names when keys are absent\n\nImplementation notes:\n- config/index.ts already exists and looks complete\n- Focus on .env.example creation and documentation\n- Test with missing keys to ensure error messages are helpful",
+        "testStrategy": "Unit test: Call loadConfig() with missing required keys and verify ConfigError is thrown with correct missing key names. Integration test: Run app without .env and confirm clear error message appears.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Foundation: TimescaleDB Schema and Continuous Aggregates",
+        "description": "Create and deploy the TimescaleDB schema with hypertables for prices, trades, positions, lesson progress, and settings. Set up continuous aggregates for weekly and monthly candles.",
+        "details": "Database schema implementation:\n1. Review existing services/data/schema.sql\n2. Create hypertable for prices (ts, symbol, open, high, low, close, volume)\n3. Create tables for trades, positions, cash, lesson_progress, settings\n4. Add CHECK constraint on cash.balance >= 0\n5. Create continuous aggregates: candles_weekly (7 days) and candles_monthly (30 days)\n6. Set up refresh policies to run every hour\n7. Add indexes on symbol and ts for query performance\n8. Create migration script and deployment instructions\n\nTimescaleDB-specific features:\n- Use create_hypertable() for time-series data\n- Use time_bucket() in continuous aggregate queries\n- Use first(), last(), max(), min() window functions\n\nSQL pseudo-code:\nCREATE TABLE prices (ts TIMESTAMPTZ NOT NULL, symbol TEXT NOT NULL, open NUMERIC, high NUMERIC, low NUMERIC, close NUMERIC, volume BIGINT);\nSELECT create_hypertable('prices', 'ts');\nCREATE MATERIALIZED VIEW candles_weekly WITH (timescaledb.continuous) AS SELECT time_bucket('7 days', ts) AS bucket, symbol, first(open, ts) AS open, max(high) AS high, min(low) AS low, last(close, ts) AS close FROM prices GROUP BY bucket, symbol;",
+        "testStrategy": "Integration test: Insert 500 sample rows for one symbol, query candles_weekly and verify aggregation. Test cash balance constraint by attempting to insert negative balance. Verify refresh policy runs.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Foundation: Lesson Content JSON Files and Schema Validation",
+        "description": "Create all 5 core lesson JSON files (plus 1 stretch) from Appendix B with proper schema validation. Ensure placeholder extraction works correctly.",
+        "details": "Lesson content creation:\n1. Review existing services/lessons/schema.ts (appears complete)\n2. Check existing lesson files: 1-feel-a-graph.json, 2-stocks-vs-etfs.json, 3-first-trade.json, 4-tokenized-funds.json, 6-options-basics.json\n3. Create missing lesson 5-backtesting-risk.json\n4. Ensure all lessons follow the schema: id, title, steps[], quiz{q, options, answer, why}\n5. Each step needs: id, title, say (with {PLACEHOLDER} syntax), optional data[], action[], chart{}, alt\n6. Validate all files against lessonSchema on load\n7. Extract and document all placeholders used (AAPL.pct, VOO.price, etc.)\n8. Test placeholder extraction with placeholders() function\n\nExample step structure:\n{\n  \"id\": \"etf-1\",\n  \"title\": \"One stock's trend\",\n  \"say\": \"Here's Apple over the last month. It's {AAPL.dir_1m} about {AAPL.pct_1m} percent.\",\n  \"data\": [{\"tool\": \"get_price_history\", \"args\": {\"symbol\": \"AAPL\", \"range\": \"1m\"}}],\n  \"chart\": {\"series\": [\"AAPL\"], \"smooth\": \"sma5\", \"points\": 12, \"markers\": [\"peak\"]}\n}",
+        "testStrategy": "Unit test: Load all 6 lesson files and verify they pass lessonSchema validation. Test that quiz.answer indexes into options. Test placeholders() function extracts {AAPL.pct} correctly. Verify each lesson has 1-6 steps and one quiz.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Foundation: Next.js App Shell with Aurora Background and State Machine",
+        "description": "Build the single-page app shell with aurora background, accessible keymap, ARIA live region, and the complete state machine for all 8 app states.",
+        "details": "App shell implementation:\n1. Review existing apps/web/app/page.tsx, lib/state/appMachine.ts, lib/a11y/keymap.ts, lib/a11y/live.ts\n2. Complete the state machine with all 8 states: menu, listening, thinking, answer, lesson, quiz, confirm, settling\n3. Implement transition logic between states based on events: TALK_START, TALK_END, MENU, BACK, NEXT, PREV, CONFIRM, CANCEL\n4. Build AuroraBackground component with 4 blurred color blobs (teal #0FA595, sea blue #2A5FB0, amber #FFC95A, coral #E8655C) that drift and blend\n5. Add 8% scale and saturation increase during listening state\n6. Implement glass surface styling: rgba(8,24,22,.46), 26px backdrop blur, 1px white 20% border, 28-32px radius\n7. Set up typography: Bricolage Grotesque for headings, Atkinson Hyperlegible for body\n8. Wire keyboard handlers: Space (hold to talk), M (menu), R (repeat), N/P (lesson nav), 0-9 (options), Enter (confirm), Escape (cancel), T (type), S (sonify)\n9. Implement ARIA live region that announces state changes\n10. Add reduced motion support via prefers-reduced-motion media query\n\nState machine transitions:\nmenu + TALK_START → listening\nlistening + TALK_END → thinking\nthinking + (response received) → answer\nanswer + NEXT → lesson\nlesson + CONFIRM → confirm\nconfirm + CONFIRM → settling",
+        "testStrategy": "Unit test: State machine transitions with each event type. Verify listening state triggers background animation. E2E test with Playwright: Press space, verify listening state, release and verify thinking state. Test all keyboard shortcuts. Verify ARIA live region announces each state change.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Market Data: Price Ingestion from Alpaca with CSV Fallback",
+        "description": "Implement price data ingestion for 6 symbols (VOO, SPY, QQQ, AAPL, MSFT, NVDA) from Alpaca API, backfilling 2 years of daily bars. Include CSV fallback for when database is unreachable.",
+        "details": "Price ingestion implementation:\n1. Create services/data/ingest_alpaca.py using Alpaca Market Data API\n2. Fetch 2 years (approximately 500 trading days) of daily OHLCV bars for each of 6 symbols\n3. Insert into prices hypertable with proper timestamptz handling\n4. Create CSV fallback files in data/fallback/*.csv with same schema\n5. Implement fallback.py module that reads CSVs when database connection fails\n6. Add automatic fallback trigger on database connection errors\n7. Log all fallback usage for monitoring\n8. Schedule refresh script to run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)\n9. Handle market holidays and weekends gracefully\n10. Store last successful fetch timestamp\n\nAlpaca API pseudo-code:\nfrom alpaca.data import StockHistoricalDataClient\nfrom alpaca.data.requests import StockBarsRequest\nfrom datetime import datetime, timedelta\n\nclient = StockHistoricalDataClient(api_key, secret_key)\nrequest = StockBarsRequest(\n    symbol_or_symbols=[\"VOO\", \"SPY\", \"QQQ\", \"AAPL\", \"MSFT\", \"NVDA\"],\n    timeframe=TimeFrame.Day,\n    start=datetime.now() - timedelta(days=730)\n)\nbars = client.get_stock_bars(request)\n# Insert into TimescaleDB",
+        "testStrategy": "Integration test with database down: Verify CSV fallback is triggered and returns correct data structure. Integration test with Alpaca: Fetch 1 week of data for AAPL and verify 5 rows inserted. Verify refresh during weekend uses Friday's close. Mock test for market hours check.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Market Data: Chart Series Pipeline with SMA, RDP, and Normalization",
+        "description": "Implement the chart series processing pipeline that takes raw price data and produces 12-16 normalized points with markers, using SMA smoothing and Ramer-Douglas-Peucker simplification.",
+        "details": "Chart series pipeline:\n1. Create services/data/series.py module\n2. Implement SMA smoothing: 5-day for 1-month range, 20-day for 6-month range\n3. Implement Ramer-Douglas-Peucker algorithm to reduce series to 12-16 points while preserving shape\n4. Normalize points to [0, 1] range for drawing on palm\n5. Identify and mark key points: peak (highest), trough (lowest), end (today)\n6. Implement shared scale for comparison mode (two series on same scale)\n7. Handle edge cases: flat series (centered flat line), insufficient data points\n8. Add narration hints: \"up\", \"down\", \"barely moved\"\n\nPython pseudo-code:\ndef chart_series(symbol: str, range: str, points: int = 12):\n    # 1. Fetch closes from database for range\n    closes = db.query(f\"SELECT close FROM prices WHERE symbol = '{symbol}' AND ts >= now() - interval '{range}'\")\n    \n    # 2. Apply SMA smoothing\n    window = 5 if range == \"1m\" else 20\n    smoothed = moving_average(closes, window)\n    \n    # 3. Apply RDP to reduce to target points\n    simplified = rdp(smoothed, epsilon=auto_epsilon(smoothed, points))\n    \n    # 4. Normalize to [0, 1]\n    min_val, max_val = min(simplified), max(simplified)\n    normalized = [(p - min_val) / (max_val - min_val) for p in simplified]\n    \n    # 5. Find markers\n    peak_idx = normalized.index(max(normalized))\n    trough_idx = normalized.index(min(normalized))\n    \n    return {\"points\": normalized, \"markers\": {\"peak\": peak_idx, \"trough\": trough_idx}}\n\nComparison mode uses: min(seriesA.min, seriesB.min) and max(seriesA.max, seriesB.max) as shared scale",
+        "testStrategy": "Unit test with known series: [1,2,3,4,5,4,3,2,1] should produce rising then falling shape. Verify output has 12-16 points. Verify peak marker at correct index. Test flat series [5,5,5,5,5] produces centered 0.5 values. Test comparison mode produces same scale for both series.",
+        "priority": "high",
+        "dependencies": [
+          2,
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Trading Engine: REST API with Market Registry and Two-Step Trades",
+        "description": "Build the Python FastAPI trading engine with pluggable market modules, ledger, and two-step trade flow (propose then confirm). Ensure cash balance never goes negative.",
+        "details": "Trading engine implementation:\n1. Create services/engine/ directory with FastAPI app\n2. Design abstract Market base class: quote(), fill(), settle()\n3. Implement equity.py market for VOO, SPY, QQQ, AAPL, MSFT, NVDA\n4. Implement pvoo.py market (PVOO tokenized fund)\n5. Create ledger.py with double-entry accounting: cash and positions tables\n6. Implement trades.py with proposal and confirmation flow\n7. Add 60-second expiry on proposals\n8. Build REST endpoints:\n   - GET /markets - list available assets\n   - GET /quote?symbol=VOO - current price\n   - GET /history?symbol=VOO&range=1m - price history\n   - POST /propose {side, symbol, qty} - create proposal, return id\n   - POST /confirm {id} - execute trade if proposal is live\n   - POST /cancel {id} - cancel proposal\n   - GET /portfolio - current holdings and cash\n   - POST /backtest {symbol, amount, start_date} - historical simulation\n   - GET /review - trade history\n9. Implement portfolio.py with coaching tips (concentration, frequent trading, panic selling)\n10. Implement backtest.py with maximum drawdown calculation\n11. Add weekend/holiday handling: use last close price and state this clearly\n12. Ensure atomicity: proposal confirm either fully succeeds or fully fails\n\nPython pseudo-code:\nclass Market(ABC):\n    @abstractmethod\n    def quote(self, symbol: str) -> Quote: pass\n    @abstractmethod\n    def fill(self, side: str, symbol: str, qty: Decimal) -> Fill: pass\n    @abstractmethod\n    def settle(self, fill: Fill) -> Settlement: pass\n\nCash constraint enforcement:\ndb.execute(\"UPDATE cash SET balance = balance - ? WHERE balance >= ?\", [total, total])\nif db.rowcount == 0: raise InsufficientFundsError()",
+        "testStrategy": "Unit test: Market registry loads 6 equity symbols and PVOO. API test: POST /propose then /confirm within 60s succeeds, after 60s returns 409. Test /confirm without proposal returns 409. Test insufficient funds prevents trade. Integration test: Buy 2 PVOO, verify cash decreases and position increases. Test weekend fill uses Friday close.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2,
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Blockchain: PVOO SPL Token on Solana Devnet with Mint/Burn/Supply",
+        "description": "Deploy PVOO token on Solana devnet as an SPL token with 6 decimals. Implement mint (on buy), burn (on sell), and supply check endpoints. Include ledger-only fallback for RPC failures.",
+        "details": "Solana chain service implementation:\n1. Create services/chain/ Node.js service\n2. Use @solana/web3.js v1 and @solana/spl-token\n3. Generate or import devnet keypair for program authority (stored in env SOLANA_PAYER_SECRET_KEY)\n4. Create PVOO mint with 6 decimals\n5. Implement REST API:\n   - POST /mint {amount} - mint PVOO tokens, return tx signature and Explorer link\n   - POST /burn {amount} - burn PVOO tokens, return tx signature\n   - GET /supply - get on-chain token supply via getTokenSupply RPC call\n6. Measure and return settlement time in milliseconds\n7. Implement 8-second timeout on RPC calls\n8. Add ledger-only fallback: if RPC fails, record trade in ledger but mark as \"simulated settlement\" and return previous Explorer link as example\n9. Log all RPC failures for monitoring\n\nNode.js pseudo-code:\nimport { Connection, Keypair, PublicKey } from '@solana/web3.js';\nimport { createMint, mintTo, burn, getAccount } from '@solana/spl-token';\n\nconst connection = new Connection(SOLANA_RPC_URL, 'confirmed');\nconst payer = Keypair.fromSecretKey(bs58.decode(SOLANA_PAYER_SECRET_KEY));\n\n// One-time setup\nconst mint = await createMint(connection, payer, payer.publicKey, null, 6);\n\n// On buy\nconst startMs = Date.now();\nconst sig = await mintTo(connection, payer, mint, tokenAccount, payer, amount * 1e6);\nconst settleMs = Date.now() - startMs;\nreturn { signature: sig, settleMs, explorerUrl: `https://explorer.solana.com/tx/${sig}?cluster=devnet` };",
+        "testStrategy": "Integration test on devnet: Mint 2 PVOO, verify supply is 2. Burn 1, verify supply is 1. Test RPC timeout by using invalid endpoint, verify ledger-only fallback activates. Verify Explorer URLs are valid. Test concurrent mints to ensure no race conditions.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Voice I/O: Push-to-Talk, ElevenLabs STT/TTS, and Gemini TTS Fallback",
+        "description": "Implement push-to-talk audio capture, ElevenLabs Speech-to-Text transcription, and streaming Text-to-Speech with ElevenLabs primary and Gemini TTS fallback. Include earcons for state changes.",
+        "details": "Voice interface implementation:\n1. Create apps/web/lib/voice/ module with pushToTalk.ts, stt.ts, tts.ts, earcons.ts, repeat.ts\n2. Implement push-to-talk capture:\n   - Record from microphone while Space is held using MediaRecorder API\n   - Ignore key repeat events\n   - Minimum hold duration: 250ms\n   - Output webm/opus blob\n   - Play rising earcon on press, falling on release\n   - Cancel on Escape\n3. Implement STT via apps/web/app/api/stt/route.ts:\n   - Send audio blob to ElevenLabs Speech-to-Text API\n   - Return transcript and confidence score\n   - If confidence < 0.6 or API fails, return error and show typing fallback\n4. Implement streaming TTS:\n   - Primary: ElevenLabs streaming TTS with configured voice ID\n   - Fallback: Gemini TTS (gemini-3.8-flash-tts) with style prompt \"warm, patient teacher, slightly slow\"\n   - Last resort: browser speechSynthesis API\n   - Stream audio directly to browser, start playback immediately\n   - Cancel previous utterance when starting new one\n5. Implement repeat functionality:\n   - Cache last audio buffer in memory\n   - R key or Repeat button replays instantly without API call\n   - If answer has chart, redraw chart too\n6. Create earcons using Web Audio API:\n   - listening-start: rising tone\n   - listening-end: falling tone\n   - success: pleasant chime\n   - wrong-answer: low tone\n   - trade-confirmed: thump\n   - no external sound files\n7. Implement typing fallback:\n   - T key opens labeled text input\n   - Enter sends text as transcript\n   - Accessible to screen readers\n\nAPI route pseudo-code:\n// apps/web/app/api/tts/route.ts\nexport async function POST(req: Request) {\n  const { text, voiceId } = await req.json();\n  try {\n    // Try ElevenLabs streaming\n    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {\n      method: 'POST',\n      headers: { 'xi-api-key': ELEVENLABS_API_KEY },\n      body: JSON.stringify({ text, model_id: 'eleven_turbo_v2' })\n    });\n    return new Response(response.body, { headers: { 'Content-Type': 'audio/mpeg' } });\n  } catch (e) {\n    // Fallback to Gemini TTS\n    // ... implement Gemini Audio API call\n  }\n}",
+        "testStrategy": "E2E test: Hold Space, speak \"What is an ETF?\", release, verify transcript appears within 3s. Verify audio plays back. Manual test: Press R and verify audio replays instantly. Test with network offline to verify Gemini fallback. Unit test earcon generation produces correct frequencies. Verify minimum 250ms hold prevents accidental captures.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Tutor Brain: Tool Registry and Gemini Function-Calling Loop",
+        "description": "Implement the 16-tool registry (11 trading + 5 tutoring) and the Gemini function-calling loop that turns learner questions into spoken replies with tool calls. Enforce the rule that all numbers must come from tool results.",
+        "details": "Tutor brain implementation:\n1. Create services/tutor/ module with loop.ts, tools/ directory, prompts/system.md\n2. Implement tool registry in tools/index.ts exporting 16 tools:\n   Trading tools: list_markets, get_quote, get_price_history, show_chart, propose_trade, confirm_trade, cancel_trade, get_portfolio, run_backtest, review_trades, check_token_backing\n   Tutoring tools: start_lesson, next_step, answer_quiz, suggest_options, explain_fees\n3. Each tool has JSON schema for parameters and return type\n4. Build function-calling loop in loop.ts:\n   - Take transcript, conversation history, current state as input\n   - Call Gemini API with tools array and function calling enabled\n   - Handle up to 5 tool rounds per turn\n   - Collect all tool results\n   - Generate final reply text\n   - Return reply, tool results, UI directives (show_chart, open_menu, start_lesson)\n5. Create system prompt in prompts/system.md:\n   - \"You are Sonar, a voice-first investing tutor for blind learners\"\n   - \"Always use tools to get current data. Never answer from memory.\"\n   - \"All numbers in your reply MUST come from tool results in this turn.\"\n   - \"You teach, you don't give personalized advice.\"\n   - \"Describe shapes, never just colors.\"\n   - \"Keep sentences under 25 words for natural speech.\"\n6. Implement apps/web/app/api/talk/route.ts as the entry point:\n   - Receive transcript from STT\n   - Call tutor loop\n   - Return reply text and UI directives\n\nTool example:\n{\n  name: \"get_quote\",\n  description: \"Get current price for a symbol\",\n  parameters: {\n    type: \"object\",\n    properties: {\n      symbol: { type: \"string\", description: \"Stock symbol like AAPL or VOO\" }\n    },\n    required: [\"symbol\"]\n  },\n  execute: async ({ symbol }) => {\n    const res = await fetch(`${ENGINE_URL}/quote?symbol=${symbol}`);\n    return res.json();\n  }\n}",
+        "testStrategy": "Integration test with recorded tool results: Ask \"How did Apple do this month?\", verify get_quote and get_price_history are called, verify reply contains numbers from tool results only. Unit test: Tool registry has 16 tools, each with valid JSON schema. Test guardrail blocks reply with numbers not in tool log. Verify up to 5 tool rounds work. Test conversation history is preserved across turns.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          6,
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Tutor Brain: Speech Style Filter and Guardrails",
+        "description": "Implement the speech style filter that makes model output sound natural when spoken, and guardrails that ensure accuracy and safety (no invented numbers, no personalized advice, no claiming trades without confirmation).",
+        "details": "Speech processing implementation:\n1. Create services/tutor/speechStyle.ts module\n2. Implement toSpeech(text) filter:\n   - Strip all markdown formatting (* ** # [] ())\n   - Split sentences longer than 25 words at natural breaks\n   - Convert numbers to speakable form: \"3.5%\" → \"about 3.5 percent\", \"$560\" → \"five hundred sixty dollars\"\n   - Describe visual shapes: \"the line rises steeply\" not \"the green line\"\n   - Append one-line risk disclaimer when returns are mentioned: \"Remember, prices can fall as well as rise.\"\n3. Create services/tutor/guardrails.ts module\n4. Implement checkReply(reply, toolLog) that:\n   - Extracts all numbers and percentages from reply text\n   - Verifies each number appears in tool results from this turn\n   - Blocks reply if any number is missing from tool log\n   - Triggers regeneration with additional prompt: \"Use only the data from your tool calls\"\n5. Add content guardrails:\n   - Detect requests for personalized advice (\"should I buy\", \"what stock is best for me\")\n   - Respond with education-only answer: \"Sonar teaches investing concepts. I can't recommend specific investments for your situation.\"\n   - Detect claims of completed trades without confirm_trade in tool log\n   - Block and correct: \"I cannot confirm that trade without seeing a confirmation in my records.\"\n6. Log all guardrail blocks for monitoring\n\nPseudo-code:\nfunction checkReply(reply: string, toolLog: ToolResult[]): CheckResult {\n  const numbersInReply = extractNumbers(reply); // [\"12\", \"3.5\", \"560\"]\n  const numbersInTools = toolLog.flatMap(extractNumbers); // from JSON results\n  \n  for (const num of numbersInReply) {\n    if (!numbersInTools.includes(num)) {\n      return { blocked: true, reason: `Number ${num} not found in tool results` };\n    }\n  }\n  \n  if (reply.includes(\"should\") && detectAdviceRequest(reply)) {\n    return { blocked: true, reason: \"Personalized advice detected\" };\n  }\n  \n  if (reply.match(/bought|sold|confirmed/i) && !toolLog.some(t => t.tool === 'confirm_trade')) {\n    return { blocked: true, reason: \"Trade claim without confirmation\" };\n  }\n  \n  return { blocked: false };\n}",
+        "testStrategy": "Unit test: toSpeech() removes markdown and splits long sentences. Test \"VOO is up 12%\" becomes \"VOO is up about 12 percent. Remember, prices can fall as well as rise.\" Unit test: checkReply() blocks \"Apple is at $175\" when tool results only have $170. Test advice detection blocks \"Should I buy NVDA?\". Test trade claim is blocked without confirm_trade. Integration test with live model to ensure regeneration works.",
+        "priority": "medium",
+        "dependencies": [
+          10
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Lesson Engine: Curriculum Loader, Step Player, Quiz Engine, and Progress",
+        "description": "Build the lesson engine that loads validated lesson JSON files, plays steps with data placeholder resolution, runs quizzes, and tracks learner progress.",
+        "details": "Lesson engine implementation:\n1. Create services/lessons/ with loader.ts, player.ts, quiz.ts, progress.ts\n2. Implement loader.ts:\n   - Load all JSON files from services/lessons/content/*.json\n   - Validate each against lessonSchema on startup\n   - Extract and index all placeholders like {AAPL.pct_1m}\n   - Fail fast on validation errors with file name and issue\n3. Implement player.ts for step playback:\n   - playStep(lessonId, stepIndex) function\n   - Resolve data placeholders by calling appropriate tools at play time\n   - Fill placeholders in say text: \"{AAPL.pct_1m}\" → \"3.5\"\n   - Start TTS and chart drawing simultaneously\n   - End with instruction: \"Press N for the next step, or R to repeat\"\n   - N or right arrow advances, P or left arrow goes back\n4. Implement quiz.ts:\n   - gradeQuiz(lessonId, choice) function\n   - Accept number key 1-3 or spoken answer\n   - Match spoken answers to options with fuzzy matching\n   - Return correct: boolean, explanation: string\n   - On correct: play success chime, send double palm tap, update progress\n   - On incorrect: play wrong-answer tone, explain why, allow retry\n5. Implement progress.ts:\n   - Store in lesson_progress table: lesson_id, done, best_step, updated\n   - Also mirror to localStorage for offline persistence\n   - getProgress() returns completed lessons and next lesson\n   - updateProgress(lessonId, stepIndex) saves progress\n   - \"Up next\" and \"Done\" tags for lesson menu\n6. Handle placeholder resolution failures gracefully:\n   - If tool fails, speak step without the number\n   - Append: \"The current data is unavailable.\"\n7. Integrate with tutor loop via start_lesson and next_step tools\n\nPseudo-code:\nasync function playStep(lessonId: string, stepIdx: number) {\n  const lesson = lessons.find(l => l.id === lessonId);\n  const step = lesson.steps[stepIdx];\n  \n  // Resolve placeholders\n  let say = step.say;\n  if (step.data) {\n    const results = await Promise.all(step.data.map(d => callTool(d.tool, d.args)));\n    for (const [i, result] of results.entries()) {\n      const placeholder = extractPlaceholder(step.data[i]);\n      say = say.replace(`{${placeholder}}`, extractValue(result, placeholder));\n    }\n  }\n  \n  // Play narration and chart together\n  await Promise.all([\n    speak(say),\n    step.chart ? drawChart(step.chart) : Promise.resolve()\n  ]);\n  \n  announce(\"Press N for the next step, or R to repeat\");\n}",
+        "testStrategy": "Unit test: Load all 6 lesson files, verify schema validation passes. Test playStep() with lesson 1 step 1. Test placeholder resolution with mock tool results. Test quiz grading with correct and incorrect answers. Integration test: Complete lesson 1, verify progress saved to database and localStorage. Test placeholder failure shows graceful message. E2E test: Navigate full lesson with N/P keys.",
+        "priority": "high",
+        "dependencies": [
+          3,
+          10
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "UI Components: Space Bar Hero and Try Asking Tray",
+        "description": "Build the giant glass space bar component and the Try Asking tray that slides up while space is held, showing 9 numbered suggestions (5 lessons + 4 quick questions).",
+        "details": "Space bar and tray implementation:\n1. Create apps/web/components/SpaceBar.tsx\n2. Implement giant space bar visual:\n   - Glass surface styling as specified\n   - Press-down animation: 10px translation on active\n   - Amber glow effect on press using box-shadow\n   - 14-bar soundwave animation inside the key during listening\n   - Smooth transitions with easing\n3. Implement pointer and keyboard handling:\n   - onPointerDown and onPointerUp for mouse/touch\n   - Space key already wired in page.tsx\n   - Visual feedback on both interaction types\n4. Create apps/web/components/TryAskingTray.tsx\n5. Implement tray that slides up from bottom:\n   - Slide animation triggered by listening state\n   - Glass panel styling\n   - Two groups: Lessons (1-5) and Quick questions (6-9)\n   - Each item shows number key and label\n   - Lessons show \"Done\" or \"Up next\" tags based on progress\n   - Click or number key while held sends suggestion on release\n6. First-time behavior:\n   - On first open, tutor reads two suggestions aloud\n   - Store in localStorage to not repeat\n7. Integrate with lesson progress for tags\n8. Update page.tsx to render tray conditionally when listening\n\nTray content:\nLessons:\n1. How to feel a graph\n2. Stocks vs. ETFs\n3. Your first practice trade\n4. Tokenized funds with PVOO\n5. What if? Backtesting and risk\n\nQuick questions:\n6. How has the S&P 500 done this year?\n7. How did Apple do this month?\n8. Compare a stock and an ETF\n9. How fast does PVOO settle?",
+        "testStrategy": "E2E test with Playwright: Press space, verify tray slides up within 300ms. Press number 1 while holding space, release, verify lesson 1 starts. Visual regression test for glass styling and glow effect. Test with completed lesson 1, verify \"Done\" tag appears. Test first-time open reads suggestions aloud (mock localStorage).",
+        "priority": "high",
+        "dependencies": [
+          4,
+          9,
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "UI Components: Numbered Options Menu, Settings, and Bottom Dock",
+        "description": "Implement the numbered options menu system with main menu, lesson submenu, settings submenu, and the bottom dock with M (Menu) and R (Repeat) buttons.",
+        "details": "Menu and dock implementation:\n1. Create apps/web/components/OptionsMenu.tsx\n2. Implement main menu (opens on launch and M key):\n   - 1 Lessons\n   - 2 Ask a question\n   - 3 Practice trading\n   - 4 Settings\n   - 5 Help\n   - Vertical list with glass styling\n   - Number keys 1-5 navigate\n3. Implement submenus:\n   - Lessons: Shows all 6 lessons with Done/Up next tags\n   - Settings: Speaking speed, Chart sounds, Text size, Palm arm, Reset progress\n   - Each submenu adds \"0 Back\" option\n4. Integrate Gemini context-aware suggestion:\n   - Use suggest_options tool to get one suggestion\n   - Label as \"Options from Gemini\"\n   - Example: \"Continue Stocks vs. ETFs\" if in middle of lesson\n5. Create apps/web/components/BottomDock.tsx\n6. Implement dock with two buttons:\n   - M Menu (opens main menu)\n   - R Repeat voice (replays last audio and chart)\n   - Always visible except when Try Asking tray is open\n   - Glass styling, accessible labels\n   - M and R keyboard shortcuts already mapped\n7. Implement settings persistence:\n   - Store in database settings table and localStorage\n   - Speaking speed: slow (0.8x), normal (1.0x), fast (1.2x)\n   - Chart sounds: on/off (toggle sonification)\n   - Text size: standard, large (1.5x), extra large (2x)\n   - Palm arm: connect/disconnect\n   - Reset lesson progress: confirm dialog\n8. Spoken confirmation on settings change:\n   - \"Speaking speed is now fast\"\n   - \"Chart sounds are now off\"\n\nSettings implementation pseudo-code:\nasync function updateSetting(key: string, value: any) {\n  // Save to database\n  await db.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', [key, JSON.stringify(value), JSON.stringify(value)]);\n  \n  // Mirror to localStorage\n  localStorage.setItem(`sonar-${key}`, JSON.stringify(value));\n  \n  // Apply immediately\n  if (key === 'speakingSpeed') {\n    tts.setRate(value);\n  }\n  \n  // Speak confirmation\n  speak(getConfirmationMessage(key, value));\n}",
+        "testStrategy": "E2E test: Press M, verify menu opens. Press 1, verify Lessons submenu. Press 0, verify back to main menu. Test settings: Change speaking speed, verify confirmation spoken and next TTS uses new rate. Test R button replays last audio instantly. Verify menu reads options aloud on first open. Test Gemini suggestion appears when available. Verify dock hides during Try Asking tray.",
+        "priority": "high",
+        "dependencies": [
+          4,
+          9,
+          10,
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "UI Components: Answer Card, Lesson Header, and Quiz Options",
+        "description": "Build the answer card component that displays tutor replies, the palm scene, chart legend, and large captions. Include lesson header with progress and quiz option selection.",
+        "details": "Answer card implementation:\n1. Create apps/web/components/AnswerCard.tsx\n2. Implement answer card with sections:\n   - \"You asked: ...\" (user's question)\n   - Palm scene canvas (see task 16)\n   - Chart legend using solid vs dashed lines (never color alone)\n   - Large caption with reply text (1.25-1.6rem bold, Atkinson Hyperlegible)\n   - \"Drawing on your palm\" / \"Drawing finished\" / \"Sent to your palm arm\" status\n3. Conditional rendering:\n   - Hide canvas when answer has no chart\n   - Show legend only when chart is present\n4. Implement lesson header for lesson state:\n   - \"Lesson 2 of 5 · Step 1 of 4\"\n   - Lesson title\n   - Progress dashes: done (amber), current (white), future (gray)\n   - Back (P) and Next (N) buttons\n   - Keyboard shortcuts: P/left arrow back, N/right arrow next\n5. Implement quiz options:\n   - Question as caption\n   - Three numbered options (large glass buttons)\n   - Number keys 1-3 to answer\n   - Correct answer turns teal background\n   - Wrong answer turns coral background\n   - Explanation appears below after selection\n6. Accessibility features:\n   - Caption mirrored to ARIA live region (polite)\n   - Canvas has alt description from step.alt\n   - All buttons have clear labels\n   - Focus management: keep on space bar after interactions\n7. Integrate with state machine:\n   - answer state shows card with reply\n   - lesson state shows header and card\n   - quiz state shows question and options\n\nQuiz rendering pseudo-code:\n{state === 'quiz' && (\n  <div className=\"quiz\">\n    <p className=\"question\">{quiz.q}</p>\n    <div className=\"options\">\n      {quiz.options.map((opt, i) => (\n        <button\n          key={i}\n          className={classNames('option', {\n            correct: answered && i === quiz.answer,\n            wrong: answered && i !== quiz.answer && i === selected\n          })}\n          onClick={() => handleQuizAnswer(i)}\n        >\n          <span className=\"number\">{i + 1}</span> {opt}\n        </button>\n      ))}\n    </div>\n    {answered && <p className=\"explanation\">{quiz.why}</p>}\n  </div>\n)}",
+        "testStrategy": "E2E test: Ask \"What is an ETF?\", verify answer card appears with caption. Verify canvas is hidden for non-chart answers. Test lesson mode: Start lesson 1, verify header shows \"Lesson 1 of 5 · Step 1 of 4\". Press N, verify progress updates. Test quiz: Answer correctly, verify teal background and chime. Answer incorrectly, verify coral and explanation. Verify ARIA live region announces caption. Test screen reader reads alt text for chart canvas.",
+        "priority": "high",
+        "dependencies": [
+          4,
+          9,
+          10,
+          12,
+          13
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "Chart Output: Realistic Palm Scene with Hand, Arm IK, and Animated Trace",
+        "description": "Build the on-screen canvas visualization of a realistic left palm with anatomical details, a two-joint robotic arm with inverse kinematics, animated drawing with soft glowing trace, and idle breathing animation.",
+        "details": "Palm scene implementation:\n1. Create apps/web/lib/palm/ module with hand.ts (geometry), arm.ts (IK + motion), trace.ts\n2. Create apps/web/components/PalmScene.tsx with Canvas 2D rendering\n3. Implement hand geometry in hand.ts:\n   - Left hand, palm up, using bezier curves\n   - Palm outline with 5 fingers (4 fingers + opposed thumb)\n   - Each finger: 3 phalanges with proper proportions\n   - Thumb: 2 visible segments plus metacarpal\n   - Anatomical creases: heart line, head line, life line, finger joint creases\n   - Warm skin gradient: radial highlight at palm center, darker toward edges\n   - Subsurface-style rim light on edges\n   - Soft drop shadow beneath hand\n4. Implement drawing box:\n   - 6cm x 4cm dashed rectangle on palm center\n   - Labels: \"PAST\" (left) and \"TODAY\" (right)\n   - Map normalized [0,1] chart points to this box\n5. Implement robotic arm in arm.ts:\n   - Two-joint arm (shoulder + elbow) entering from lower right\n   - Brushed aluminum material: gradient, highlights, reflections\n   - Servo hubs at joints with screw details\n   - Lift servo at wrist (pen-up/pen-down mechanism)\n   - Soft white stylus tip (inkless)\n   - Inverse kinematics solver: given target (x,y), solve for shoulder and elbow angles\n   - Movement constraints: joint angle limits, max velocity 4 cm/s (scaled to screen)\n6. Implement motion and animation:\n   - Trapezoidal velocity profile: ease in, constant speed, ease out\n   - Stylus lifts 6px with growing shadow when pen-up\n   - Stylus presses down with 120ms ease when pen-down\n   - Acceleration limits for realistic motion\n   - Idle breathing: hand rises/falls 1-2px every 4s (subtle sway)\n7. Implement trace rendering in trace.ts:\n   - Drawn lines appear as soft glowing marks on skin\n   - Slight indentation shadow effect\n   - Lines fade 30% after 10 seconds\n   - Clear trace when new chart starts\n8. Implement tap visualization:\n   - Stylus lifts, quick press, creates skin dimple ripple\n   - Ripple expands and fades over 300ms\n   - Visual and satisfying feedback\n9. Status indicators:\n   - \"Drawing on your palm\" during animation\n   - \"Drawing finished\" when complete\n   - \"Sent to your palm arm\" when hardware connected\n10. 60fps target on laptop hardware\n11. Respect prefers-reduced-motion: disable all animation if set\n\nIK pseudo-code:\nfunction solveIK(targetX: number, targetY: number): {shoulder: number, elbow: number} {\n  const L1 = 8; // shoulder to elbow length (cm)\n  const L2 = 6; // elbow to wrist length (cm)\n  const d = Math.sqrt(targetX**2 + targetY**2);\n  \n  // Law of cosines\n  const a2 = Math.acos((L1**2 + L2**2 - d**2) / (2 * L1 * L2));\n  const a1 = Math.atan2(targetY, targetX) - Math.acos((L1**2 + d**2 - L2**2) / (2 * L1 * d));\n  \n  return { shoulder: a1, elbow: a2 };\n}",
+        "testStrategy": "Visual inspection: Verify hand looks anatomically correct with proper creases and gradient. Verify arm enters from lower right with realistic joints. Unit test IK solver with known targets. Performance test: Verify 60fps during drawing animation on mid-range laptop. Test trace fades after 10s. Test tap creates ripple. Test breathing animation is subtle (1-2px). Verify prefers-reduced-motion disables all animation. E2E test: Play lesson 1 step 1, verify arm draws simple line smoothly.",
+        "priority": "high",
+        "dependencies": [
+          6,
+          15
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "Chart Output: Sonification with Frequency Mapping and Accessible Sound Toggle",
+        "description": "Implement sonification that plays chart data as sound, mapping prices to frequencies from 220Hz (low) to 880Hz (high), with clicks per point and thumps for taps. Always available with S key, automatic when arm disconnected or chart sounds enabled.",
+        "details": "Sonification implementation:\n1. Create apps/web/lib/palm/sonify.ts module\n2. Use Web Audio API for sound generation (no external files)\n3. Implement frequency mapping:\n   - Normalize chart points to [0, 1] (already done by series pipeline)\n   - Map to frequency range: 220 Hz (lowest point) to 880 Hz (highest point)\n   - Linear interpolation: freq = 220 + (normalized * 660)\n4. Implement playback sequence:\n   - For each point in series:\n     - Play tone at mapped frequency for 150ms\n     - Play click sound (short high-frequency burst) to mark point\n     - 100ms gap before next point\n   - For each tap marker:\n     - Play low thump (80 Hz) for 200ms\n5. Implement audio context and oscillator creation:\n   - Create AudioContext on first use\n   - Use OscillatorNode with sine wave for tones\n   - Use filtered noise for clicks\n   - Use low-frequency sine for thumps\n6. Implement controls:\n   - S key triggers sonification for current chart\n   - Automatic playback when:\n     - Palm arm is disconnected (settings.palmArm === 'disconnected')\n     - Chart sounds setting is on (settings.chartSounds === true)\n   - Stop current sonification if new chart starts\n   - Visual indicator: \"Playing chart as sound\" status\n7. Integrate with answer card: when chart is shown and conditions met, auto-play\n8. Respect browser autoplay policies: require user gesture for first playback\n\nPseudo-code:\nfunction sonify(chartOps: ChartOps) {\n  const audioCtx = new AudioContext();\n  const { points, markers } = chartOps;\n  \n  let time = audioCtx.currentTime;\n  \n  points.forEach((point, i) => {\n    // Tone for point value\n    const osc = audioCtx.createOscillator();\n    osc.frequency.value = 220 + (point * 660);\n    osc.connect(audioCtx.destination);\n    osc.start(time);\n    osc.stop(time + 0.15);\n    \n    // Click to mark point\n    playClick(audioCtx, time);\n    \n    // Tap if this is a marker\n    if (markers.includes(i)) {\n      playThump(audioCtx, time + 0.2);\n    }\n    \n    time += 0.25; // 150ms tone + 100ms gap\n  });\n  \n  announce(\"Playing chart as sound\");\n}",
+        "testStrategy": "Unit test: Generate chart with 5 points [0, 0.25, 0.5, 0.75, 1.0], verify frequencies [220, 385, 550, 715, 880] Hz. Test tap marker creates thump. Manual test: Press S during chart display, verify sound plays. Test automatic playback when arm disconnected. Test stops when new chart starts. Verify respects autoplay policy (requires user gesture). Test with headphones to verify frequency mapping is perceptually linear.",
+        "priority": "medium",
+        "dependencies": [
+          6,
+          14,
+          16
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Trading Flow: Trade Confirmation and Settlement UI with Devnet Fallback",
+        "description": "Build the trade confirmation flow UI showing price, total, risk note, Enter to confirm / Escape to cancel, settlement checklist with timing, and Explorer link. Handle devnet failures gracefully with ledger-only fallback.",
+        "details": "Trade flow UI implementation:\n1. Add confirm state handling to page.tsx state machine\n2. Create confirmation view when propose_trade tool returns:\n   - Display proposal details:\n     - \"Buy 2 PVOO\"\n     - \"Price: $467.82 per share\"\n     - \"Total: $935.64\"\n     - Risk note: \"This is practice money. Prices can fall as well as rise.\"\n   - Two large buttons:\n     - \"Enter Confirm purchase\" (amber, primary)\n     - \"Esc Cancel\" (secondary)\n   - 60-second countdown timer\n   - After 60s, show \"Offer expired\" message\n3. Implement settling state visualization:\n   - Animated checklist:\n     - \"Signed with your practice key\" (instant check)\n     - \"Sent to Solana devnet\" (check after 0.5-1s)\n     - \"Confirmed in X.X seconds\" (check when complete)\n   - Show settlement time prominently\n   - Display Explorer link: https://explorer.solana.com/tx/{sig}?cluster=devnet\n   - Single palm tap animation\n4. Handle devnet fallback scenario:\n   - If chain service returns \"simulated settlement\" flag:\n     - Checklist shows:\n       - \"Signed with your practice key\" ✓\n       - \"Recorded in ledger\" ✓\n       - \"Devnet unavailable - simulated\" ⚠️\n     - Show example Explorer link from previous successful transaction\n     - Tutor says: \"The token ledger updated, but the blockchain is unavailable right now. Here's an example of how settlement normally looks.\"\n5. Implement trade results panel (for sighted observers):\n   - Order details row: type, asset, shares, price, total, status\n   - 30-day price chart with buy/sell point marked\n   - Hover tooltip shows exact date and price at point\n   - Settlement time comparison bar:\n     - Traditional ETF: \"T+1 (next business day)\"\n     - PVOO: \"2.1 seconds\"\n   - Account balance bar: split showing holdings value and cash\n6. Integrate confirmation flow:\n   - propose_trade returns → transition to confirm state\n   - Enter key or spoken \"confirm\" → call confirm_trade tool → transition to settling state\n   - Escape or spoken \"cancel\" → call cancel_trade tool → return to answer state\n   - Timeout at 60s → show expiry message, return to answer state\n7. Portfolio view (after trade or when requested):\n   - Show account bar only\n   - List all positions with current values\n   - Show total value, gain/loss, cash balance\n   - Coaching tip every 3 trades (concentration warning, frequent trading, panic selling)\n\nConfirm UI pseudo-code:\n{state === 'confirm' && proposal && (\n  <div className=\"confirm-panel\">\n    <h2>Review your order</h2>\n    <div className=\"details\">\n      <p className=\"order\">{proposal.side} {proposal.qty} {proposal.symbol}</p>\n      <p>Price: ${proposal.price.toFixed(2)} per share</p>\n      <p className=\"total\">Total: ${proposal.total.toFixed(2)}</p>\n      <p className=\"risk\">{proposal.riskNote}</p>\n      <p className=\"expiry\">This price expires in {timeLeft}s</p>\n    </div>\n    <div className=\"actions\">\n      <button className=\"confirm\" onClick={handleConfirm}>Enter ✓ Confirm purchase</button>\n      <button className=\"cancel\" onClick={handleCancel}>Esc ✗ Cancel</button>\n    </div>\n  </div>\n)}",
+        "testStrategy": "E2E test: Use Practice trading menu to buy 2 PVOO. Verify confirm screen shows correct price and total. Press Enter, verify settling checklist animates. Verify Explorer link is valid devnet URL. Test with chain service offline: verify ledger-only fallback shows warning and example link. Test timeout: wait 60s on confirm screen, verify expiry message. Test cancel: press Escape, verify proposal is cancelled and not executed. Verify portfolio shows updated holdings after trade. Test coaching tip appears after 3rd trade.",
+        "priority": "high",
+        "dependencies": [
+          7,
+          8,
+          10,
+          15
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Hardware: ESP32 Firmware with Inverse Kinematics, Motion Control, and Safety",
+        "description": "Develop ESP32 firmware for the palm arm with on-device inverse kinematics, trapezoidal velocity profile, serial protocol handling, and safety limits including auto-lift and pressure constraints.",
+        "details": "Firmware implementation:\n1. Create firmware/palm-arm/ directory with Arduino C++ code\n2. File structure:\n   - palm_arm.ino (main loop and serial handling)\n   - ik.h (inverse kinematics solver)\n   - motion.h (trapezoidal velocity profile)\n   - protocol.h (serial command parsing)\n3. Implement IK solver on ESP32:\n   - Same algorithm as in palm scene (task 16)\n   - Calculate shoulder and elbow angles from target (x, y)\n   - Apply joint angle soft limits: shoulder [0°, 180°], elbow [0°, 135°]\n   - Reject targets outside reachable workspace\n4. Implement trapezoidal velocity profile:\n   - Acceleration phase: linear ramp up\n   - Constant velocity phase: max 4 cm/s\n   - Deceleration phase: linear ramp down\n   - Prevents jerky motion and reduces stress on servos\n5. Implement serial protocol (115200 baud):\n   - Commands from bridge:\n     - H: home position and lift pen\n     - P0: pen up (lift servo to raised position)\n     - P1: pen down (lift servo presses gently)\n     - M x y: move to position (x, y in [0, 1] normalized coords)\n     - T ms: tap for specified duration\n     - W ms: wait/pause for specified duration\n     - F n: set force level 1-5 (1=lightest, 5=max allowed)\n   - Responses to computer:\n     - OK: command succeeded\n     - ERR code: command failed (e.g., ERR_TIMEOUT, ERR_LIMIT)\n6. Implement safety features:\n   - Maximum pressure level 5 enforced in firmware (cannot be exceeded)\n   - Auto-lift after 3 seconds of no commands (prevents prolonged pressure)\n   - Soft inkless stylus (hardware choice)\n   - Emergency stop on invalid commands\n7. Map normalized coordinates to physical workspace:\n   - Drawing box: 6cm x 4cm on palm\n   - Origin at top-left of box\n   - Apply workspace-to-joint transformation\n8. Servo control:\n   - 3 servos: shoulder joint, elbow joint, pen lift\n   - Use Servo.h library or ESP32 LEDC for PWM\n   - Smooth interpolation between positions\n9. Startup behavior:\n   - Home all servos to known position\n   - Lift pen\n   - Send ready signal over serial\n10. Error handling:\n    - Watchdog timer for firmware hangs\n    - Return ERR codes for invalid positions, timeouts\n\nArduino pseudo-code:\n#include <Servo.h>\n#include \"ik.h\"\n#include \"motion.h\"\n#include \"protocol.h\"\n\nServo shoulder, elbow, lift;\nvoid setup() {\n  Serial.begin(115200);\n  shoulder.attach(SHOULDER_PIN);\n  elbow.attach(ELBOW_PIN);\n  lift.attach(LIFT_PIN);\n  home();\n  Serial.println(\"OK\");\n}\n\nvoid loop() {\n  if (Serial.available()) {\n    String cmd = Serial.readStringUntil('\\n');\n    handleCommand(cmd);\n  }\n  checkAutoLift(); // lift after 3s idle\n}\n\nvoid handleCommand(String cmd) {\n  if (cmd[0] == 'M') {\n    float x, y;\n    sscanf(cmd.c_str(), \"M %f %f\", &x, &y);\n    auto angles = solveIK(x * 60, y * 40); // mm\n    moveTo(angles.shoulder, angles.elbow);\n    Serial.println(\"OK\");\n  }\n  // ... other commands\n}",
+        "testStrategy": "Bench test with ruler: Send M commands for a 12-point line, measure actual drawing is within 2mm of 6x4cm box. Test auto-lift: send M command, wait 3s, verify pen lifts. Test pressure: set F 5, verify stylus doesn't press too hard (subjective feel). Test homing: power cycle, verify arm returns to known position. Test serial protocol: send H, P0, M 0.5 0.5, P1, P0 sequence, verify each returns OK. Test invalid command returns ERR. Measure max speed doesn't exceed 4 cm/s.",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Hardware Bridge: Arm Path Planner and Web Serial Connection",
+        "description": "Build the bridge between the palm scene chart operations and the physical arm, including path planning (chart ops to serial commands) and Web Serial API connection. Ensure on-screen and physical arm move in sync.",
+        "details": "Arm bridge implementation:\n1. Create bridge/serial/ module with planner.ts and webserial.ts\n2. Implement planner.ts to convert chart operations to serial commands:\n   - Input: ChartOps {points: number[], taps: number[], pauses: number[]}\n   - Output: string[] of serial commands\n   - Algorithm:\n     - H (home and lift)\n     - For each stroke (series of connected points):\n       - P0 (pen up)\n       - M x y (move to first point)\n       - P1 (pen down)\n       - For each subsequent point: M x y\n       - P0 (pen up)\n     - For each tap marker:\n       - P0, M x y (move to tap position)\n       - T 200 (tap for 200ms)\n     - W 500 (wait before next operation)\n   - Normalize points from [0, 1] to drawing box coordinates\n   - Cap speed at 4 cm/s by inserting intermediate waypoints if needed\n3. Implement webserial.ts for Web Serial API:\n   - connectArm() function to request port and connect at 115200 baud\n   - disconnectArm() function\n   - send(commands: string[]) function that:\n     - Sends each command\n     - Waits for OK or ERR response\n     - Logs errors\n     - Returns success/failure status\n   - Monitor connection status (connected/disconnected)\n4. Integrate with palm scene:\n   - When chart operations are sent to palm scene:\n     - If arm is connected, also send to physical arm via bridge\n     - On-screen animation and physical drawing start simultaneously\n     - Track sync: physical should be within 200ms of on-screen\n5. Handle connection errors gracefully:\n   - If send fails, mark arm as disconnected\n   - Show notification: \"Palm arm disconnected\"\n   - Continue with on-screen visualization only\n   - Sonification automatically activates (from task 17)\n6. Settings integration:\n   - Settings menu has \"Palm arm: Connect / Disconnect\" option\n   - Connect triggers Web Serial port picker\n   - Disconnect closes serial port\n   - Store connection preference in localStorage\n7. Permissions:\n   - Web Serial requires HTTPS or localhost\n   - User gesture required to request port\n8. Telemetry (optional, stretch):\n   - Receive position updates from arm\n   - Display on palm scene for debugging\n\nPlanner pseudo-code:\nfunction plan(chartOps: ChartOps): string[] {\n  const commands: string[] = ['H']; // home\n  \n  // Draw main series\n  if (chartOps.points.length > 0) {\n    commands.push('P0'); // pen up\n    commands.push(`M ${chartOps.points[0].x} ${chartOps.points[0].y}`);\n    commands.push('P1'); // pen down\n    \n    for (let i = 1; i < chartOps.points.length; i++) {\n      commands.push(`M ${chartOps.points[i].x} ${chartOps.points[i].y}`);\n    }\n    \n    commands.push('P0'); // pen up\n  }\n  \n  // Add taps\n  for (const tap of chartOps.taps) {\n    commands.push(`M ${tap.x} ${tap.y}`);\n    commands.push('T 200'); // tap for 200ms\n  }\n  \n  return commands;\n}",
+        "testStrategy": "Integration test: Connect to simulated serial device (virtual port or mock), send 12-point line commands, verify command sequence. Bench test with real hardware: Draw lesson 1 chart, record video of on-screen and physical arm side-by-side, verify sync within 200ms. Test disconnect during drawing: verify graceful fallback to on-screen only. Test connection in settings menu: verify port picker opens. Unit test planner with known chart ops, verify command sequence is correct.",
+        "priority": "medium",
+        "dependencies": [
+          16,
+          19
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Accessibility: Full NVDA and VoiceOver Support with ARIA Live Regions",
+        "description": "Complete accessibility pass ensuring full keyboard navigation, ARIA live announcements, labeled controls, proper focus management, and no color-only information. Test with NVDA and VoiceOver.",
+        "details": "Accessibility implementation:\n1. ARIA live regions (already started in lib/a11y/live.ts):\n   - Polite live region for state changes and captions\n   - Assertive live region for errors and urgent messages\n   - Ensure every caption is announced exactly once\n   - Announce state transitions: \"Listening\", \"Thinking\", etc.\n2. Labeled controls:\n   - Every button has aria-label\n   - Space bar: \"Hold space bar to talk\"\n   - Menu items: \"1 Lessons\", \"2 Ask a question\", etc.\n   - Quiz options: \"Option 1: One stock\", etc.\n3. Focus management:\n   - Focus stays on space bar as primary control\n   - After menu selection, return focus to space bar\n   - After quiz answer, move focus to next step button\n   - Tab order is logical and matches visual layout\n4. Keyboard navigation completeness:\n   - Every interactive element reachable via keyboard\n   - No keyboard traps\n   - Escape always cancels/closes\n   - All shortcuts documented in Help menu\n5. Canvas accessibility:\n   - Chart canvas has alt text from lesson step.alt field\n   - Example: \"Apple stock trend line with a tap marking the peak\"\n   - Alt updates when chart changes\n6. Color independence:\n   - Chart legend uses solid vs dashed lines, not just colors\n   - Success/error uses icons + color (✓/✗ plus teal/coral)\n   - Progress dashes use position + color (amber for done, white for current)\n7. Text alternatives:\n   - All icons have text labels or aria-label\n   - Chart status text: \"Drawing on your palm\" is visible\n8. Screen reader testing:\n   - Test full demo flow with NVDA on Windows\n   - Test full demo flow with VoiceOver on macOS\n   - Verify every piece of information is accessible non-visually\n   - Document any screen reader quirks or workarounds\n9. Reduced motion:\n   - Verify prefers-reduced-motion disables all animations\n   - Test with OS setting enabled\n10. High contrast mode:\n    - Test in Windows High Contrast mode\n    - Verify borders and text remain visible\n\nTesting checklist:\n- [ ] Launch app with screen reader, hear welcome message\n- [ ] Navigate menu with number keys, hear each option\n- [ ] Start lesson 1, hear each step's narration\n- [ ] Advance with N key, hear \"Press N for the next step\"\n- [ ] Answer quiz with number key, hear result\n- [ ] Ask a question, hear caption announced\n- [ ] Open settings, change option, hear confirmation\n- [ ] Complete a trade, hear settlement checklist\n- [ ] Use only keyboard throughout (no mouse)",
+        "testStrategy": "Manual testing with real screen readers: Complete full demo flow with NVDA (Windows) and VoiceOver (macOS) with eyes closed or screen off. Automated testing: Use axe-core or similar tool to scan for ARIA issues. Verify 100% of UI is navigable with keyboard only. Test with prefers-reduced-motion enabled. Recruit blind tester to attempt full demo flow with zero sighted assistance (ultimate test from PRD success metrics).",
+        "priority": "high",
+        "dependencies": [
+          13,
+          14,
+          15,
+          18
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "Integration Testing: End-to-End Demo Flow with Eyes-Closed Test",
+        "description": "Build comprehensive integration test suite covering the full demo flow: welcome, lesson, question with chart, backtest, practice trade, token backing check, portfolio. Include eyes-closed manual test with blind or blindfolded tester.",
+        "details": "Integration testing implementation:\n1. Create tests/integration/ directory with Playwright test suites\n2. Implement E2E test scenarios:\n   - Full demo flow test:\n     - Launch app, hear welcome\n     - Press 1 for Lessons\n     - Press 1 for lesson 1\n     - Complete all steps with N key\n     - Answer quiz correctly\n     - Verify progress saved\n   - Question with chart flow:\n     - Press space, ask \"How did Apple do this month?\"\n     - Verify get_quote and get_price_history tools called\n     - Verify chart appears\n     - Verify sonification plays (if arm disconnected)\n   - Backtest flow:\n     - Ask \"What if I invested $1000 in VOO a year ago?\"\n     - Verify run_backtest tool called\n     - Verify result includes end value, return %, max drawdown\n     - Verify chart shows the period\n   - Practice trade flow:\n     - Select \"Buy 2 PVOO\" from menu\n     - Verify propose_trade called\n     - Verify confirmation screen shows price and total\n     - Press Enter to confirm\n     - Verify confirm_trade called\n     - Verify mint happens (if devnet available)\n     - Verify settlement checklist animates\n     - Verify Explorer link shown\n   - Token backing check:\n     - Request backing check\n     - Verify check_token_backing tool called\n     - Verify supply matches ledger message spoken\n   - Portfolio check:\n     - Request portfolio\n     - Verify get_portfolio tool called\n     - Verify holdings and cash shown correctly\n3. Test data accuracy (PRD success metric):\n   - Script with known inputs and expected outputs\n   - Verify 100% of spoken numbers match database\n   - Log all tool calls and results\n   - Compare spoken text to tool results\n4. Test trade confirmation requirement (PRD success metric):\n   - Verify 0 trades execute without explicit confirmation\n   - Test that propose without confirm doesn't execute\n   - Test that timeout prevents execution\n5. Test PVOO backing (PRD success metric):\n   - After every PVOO trade, verify supply == ledger\n   - Automated check in test suite\n6. Test voice latency (PRD success metric):\n   - Measure time from space bar release to first audio\n   - Verify p90 < 4 seconds\n   - Log all latency measurements\n7. Eyes-closed manual test:\n   - Recruit blind tester or use blindfolded sighted tester\n   - Provide no sighted assistance\n   - Ask tester to complete:\n     - One lesson start to finish\n     - Ask one question and feel chart\n     - Complete one practice trade\n   - Record session, note any friction points\n   - Success = completion with zero sighted help\n8. Fallback scenario testing:\n   - Database down: verify CSV fallback works\n   - Devnet down: verify ledger-only settlement\n   - ElevenLabs quota: verify Gemini TTS fallback\n   - Network offline: verify graceful degradation\n9. Weekend/holiday testing:\n   - Run during market closure\n   - Verify Friday close prices used\n   - Verify \"market is closed\" mentioned\n\nTest data fixture example:\nconst EXPECTED_APPLE_1M = {\n  symbol: 'AAPL',\n  direction: 'up',\n  percent: '3.5',\n  peak: { date: '2026-10-10', price: 178.32 }\n};\n// Verify spoken text contains these values",
+        "testStrategy": "Automated E2E tests run in CI on every commit. Manual eyes-closed test performed before final submission. Latency measurements logged and analyzed. All 5 PRD success metrics verified programmatically. Record test sessions for review. Document any failures and fixes. Final gate: blindfolded team member completes demo with no help.",
+        "priority": "high",
+        "dependencies": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          17,
+          18
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "Demo Preparation: Backup Video Recording and Devpost Submission",
+        "description": "Record a 2-minute backup demo video showing the full flow with narration. Write comprehensive Devpost entry covering all features, prizes, technical approach, and accessibility. Prepare for Expo presentation.",
+        "details": "Demo preparation:\n1. Record backup video (2 minutes max):\n   - Script:\n     - [0:00-0:15] Problem: \"Investing tools are built around charts. For blind users, a chart becomes a list of numbers that hides the trend.\"\n     - [0:15-0:45] Solution demo: Show voice interaction, lesson playback, chart drawing on palm\n     - [0:45-1:15] Practice trade: Show trade confirmation, devnet settlement, Explorer link\n     - [1:15-1:45] Tokenization: Explain PVOO, show backing check, compare settlement times\n     - [1:45-2:00] Call to action: \"Sonar makes investing accessible through voice, touch, and sound.\"\n   - Recording setup:\n     - Screen capture of app\n     - Split screen or picture-in-picture of physical palm arm\n     - Voiceover narration\n     - Show keyboard shortcuts on screen\n     - Include accessibility features (screen reader demo)\n   - Editing:\n     - Add captions for accessibility\n     - Background music (low volume)\n     - Smooth transitions\n     - Export at 1080p\n2. Write Devpost entry:\n   - Inspiration: accessibility gap, personal connection if any\n   - What it does: voice tutor, felt charts, practice trades, tokenization\n   - How we built it:\n     - Tech stack: Next.js, Gemini, ElevenLabs, TimescaleDB, Solana, ESP32\n     - Architecture: modular, voice-first, accessible-by-design\n     - Key decisions: ElevenLabs voice, Gemini function calling, devnet tokens\n   - Challenges:\n     - Preventing hallucinated numbers with guardrails\n     - Synchronizing on-screen and physical arm\n     - Graceful degradation for hardware failures\n   - Accomplishments:\n     - Full keyboard navigation\n     - Real market data with tools\n     - <4s latency p90\n     - Eyes-closed usable\n   - What we learned:\n     - Accessibility best practices\n     - Voice UX design\n     - Blockchain settlement\n   - What's next:\n     - Real brokerage integration (regulation permitting)\n     - Options education module\n     - Multi-user accounts and progress tracking\n   - Prizes targeting:\n     - Technica 2026: Best Accessibility Hack, Best Use of AI, Best Hardware Hack\n     - Sponsored: ElevenLabs (voice), Gemini (function calling), Tiger Data (time-series data)\n   - Built with:\n     - List all major technologies and APIs\n   - Links:\n     - GitHub repo (public)\n     - Demo video (YouTube)\n     - Live demo (if deployed)\n3. Prepare for Expo (Sunday 1 PM):\n   - Test setup:\n     - Laptop with app running\n     - Palm arm connected and tested\n     - Backup video ready to play if hardware fails\n     - Phone hotspot as network backup\n   - Demo script:\n     - 30-second version for quick walk-bys\n     - 2-minute version for interested judges\n     - 5-minute version for detailed questions\n   - Talking points:\n     - Accessibility is not an afterthought\n     - Real data, not invented\n     - Tokenization education without real-money risk\n   - Handouts (optional):\n     - QR code to Devpost\n     - Key features list\n4. Team preparation:\n   - Assign roles: demo driver, hardware monitor, question answerer\n   - Practice demo with timer\n   - Prepare answers to likely questions:\n     - \"How accurate is the voice recognition?\"\n     - \"What if the arm breaks?\"\n     - \"Can blind users really use this alone?\"\n     - \"How does tokenization differ from traditional ETFs?\"\n5. Code freeze and backup:\n   - Final commit at 9 AM Sunday\n   - Tag as v1.0-technica\n   - Create backup of working build\n   - Test on fresh laptop clone\n\nDevpost checklist:\n- [ ] Title: Sonar: Voice Investing Tutor for Blind Learners\n- [ ] Tagline: Learn investing through voice, touch, and sound\n- [ ] 2-minute video uploaded\n- [ ] At least 4 screenshots (app states, arm drawing, Explorer link, results panel)\n- [ ] All team members added\n- [ ] Technologies listed\n- [ ] All 6 prize categories selected\n- [ ] GitHub repo linked and public\n- [ ] Submission complete by 11 AM Sunday",
+        "testStrategy": "Review video with someone unfamiliar with project, verify they understand within 2 minutes. Proofread Devpost entry for typos and clarity. Practice demo presentation with timer, stay under 2 minutes. Test all demo scenarios on backup laptop. Verify video plays on Devpost. Test QR codes work. Run through full checklist twice before submission.",
+        "priority": "high",
+        "dependencies": [
+          20,
+          21,
+          22
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "Stretch Goal: Options Basics Lesson and Market Module",
+        "description": "Implement lesson 6 (Options basics) with visualization of call and put payoff diagrams, and add options market module to the trading engine. Only if time permits after all P0/P1 tasks are complete.",
+        "details": "Options implementation (stretch):\n1. Complete lesson 6 content (6-options-basics.json already exists):\n   - 3 steps: buying a call, buying a put, time decay\n   - Quiz on maximum loss\n2. Implement options-specific visualizations:\n   - Hockey stick payoff diagram for calls and puts\n   - Zero line (dashed) as reference\n   - Break-even point marked with tap\n   - Time decay curve showing value erosion\n3. Create services/engine/markets/options.py:\n   - Simplified options pricing (Black-Scholes or fixed premiums)\n   - Call and put contracts\n   - Expiration dates\n   - Strike prices\n4. Add options tools:\n   - get_option_quote(symbol, strike, expiry, type)\n   - propose_option_trade(side, contract, qty)\n   - Calculate P&L for educational purposes\n5. Update UI for options:\n   - Show strike, expiry, premium in proposal\n   - Explain max loss vs max gain clearly\n   - Warning: \"Most beginners lose money on options. Use practice money only.\"\n6. Integrate lesson 6 into menu and progress tracking\n\nNote: This is P2 priority. Only implement if:\n- All P0 and P1 tasks are complete and tested\n- At least 4 hours remain before code freeze\n- Core demo flow is rock solid\n\nIf time is short, skip this and focus on polish and testing.",
+        "testStrategy": "If implemented: Unit test options pricing produces reasonable premiums. Test call payoff diagram shows hockey stick shape. Test quiz warns about risk. Integration test: propose and confirm option trade (simulated, not real). Manual test: Play lesson 6 fully. If not implemented: Mark as deferred in TaskMaster, document for future work.",
+        "priority": "low",
+        "dependencies": [
+          3,
+          7,
+          10,
+          12,
+          15,
+          22
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-10-18T02:56:46.486Z",
+      "updated": "2026-10-18T02:56:46.486Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

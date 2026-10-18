@@ -1,0 +1,910 @@
+# Sonar PRD v2: Voice Trading Tutor for Blind and Low-Vision Learners
+
+Technica 2026 (UMD) · Version 2 · October 17, 2026
+Supersedes PRD v1. Adds the shipped UI design (space bar, Try asking tray, numbered Gemini options menu, Repeat voice), the voice stack decision, the full lesson curriculum, and the realistic palm and arm visualization. Written in the RPG format so `task-master parse-prd` can build a dependency-aware task graph.
+
+---
+
+<overview>
+
+## Problem Statement
+
+- Investing tools are built around charts. A screen reader turns a chart into a list of numbers, which hides the shape: trends, dips, and recoveries.
+- Blind and low-vision people have no safe, accessible place to practice investing and build confidence.
+- New ideas like tokenized funds are explained with diagrams, which shuts this audience out of understanding them.
+- Existing assistants (ChatGPT, Google, brokerage apps) answer with text and images, invent numbers, and never let a learner feel a chart or practice a trade safely.
+
+## Product Summary
+
+Sonar is a voice-first investing tutor. The learner holds the space bar to talk, picks numbered options read aloud by the tutor, and practices with $10,000 of simulated money. Every number comes from real market data through a tool call. A small robotic arm draws each price chart on the learner's palm (or plays it as rising and falling tones), and a Solana devnet token, PVOO, mirrors the VOO S&P 500 ETF to teach how tokenized funds work. No real money moves.
+
+## Target Users
+
+- **Primary: Maya, 34, blind since birth.** Uses NVDA or VoiceOver daily, types fast, has never invested. Wants to understand what an ETF is and try a trade without risking money or depending on a sighted helper.
+- **Secondary: Ray, 61, low vision from macular degeneration.** Sees large, high-contrast shapes. Lost his sight later in life and does not read braille. Wants big text and voice.
+- **Tertiary:** any beginner who prefers learning by voice.
+
+## Goals
+
+- A blind learner goes from "what is an ETF?" to a confirmed practice trade, a felt chart, and a backtest without needing a screen.
+- Every number Sonar says comes from a tool call, never from the model's memory.
+- Teach tokenization honestly: benefits (fast settlement, public record) and risks (trust in the issuer, custody, regulation).
+- A modular trading engine where new asset types (options, more stocks, crypto) plug in without changing existing code.
+
+## Non-goals (v1)
+
+- Real-money trading or connecting a real brokerage account.
+- Personalized financial advice.
+- Native mobile app, sign-up, or multi-user accounts.
+
+## Success Metrics
+
+- A tester with eyes closed completes the full demo flow (lesson, question, felt chart, backtest, trade, backing check, portfolio) with zero sighted help.
+- 0 trades execute without a spoken or typed "confirm".
+- PVOO on-chain supply equals the ledger's PVOO total after every trade (100% of trades).
+- 100% of spoken figures match the database during the scripted test run.
+- Spoken reply begins within 4 seconds of releasing the space bar (p90).
+- All 5 core lessons playable end to end, each with a passing quiz.
+
+</overview>
+
+---
+
+<functional-decomposition>
+
+## Capability Tree
+
+### Capability: Voice Interaction
+Turns the learner's voice into text and the tutor's text into a warm, human voice.
+
+#### Feature: Push-to-talk capture
+- **Description**: Record microphone audio while the space bar (or the on-screen key) is held.
+- **Inputs**: keydown and keyup of Space, pointer down and up on the key.
+- **Outputs**: audio blob (webm/opus) and a "listening" state event.
+- **Behavior**: ignore key repeat; minimum hold of 250 ms; play a rising earcon on press and a falling earcon on release; cancel on Escape.
+
+#### Feature: Speech-to-text
+- **Description**: Transcribe the recorded clip.
+- **Inputs**: audio blob.
+- **Outputs**: transcript string plus confidence.
+- **Behavior**: send to ElevenLabs Speech-to-Text through the server route; if confidence is low or the call fails, say "I didn't catch that, try again" and keep the typing fallback open.
+
+#### Feature: Text-to-speech
+- **Description**: Speak every tutor reply in a consistent, human voice.
+- **Inputs**: reply text, voice id, rate setting.
+- **Outputs**: streamed audio played in the browser.
+- **Behavior**: ElevenLabs streaming TTS is primary. Gemini TTS (`gemini-3.8-flash-tts`, style prompt "warm, patient teacher, slightly slow") is the automatic fallback. Browser speechSynthesis is the last resort. Starting a new utterance cancels the old one.
+
+#### Feature: Repeat voice
+- **Description**: Replay the last thing the tutor said.
+- **Inputs**: R key or the Repeat voice button.
+- **Outputs**: the cached audio replayed; if an answer has a chart, the chart redraws too.
+- **Behavior**: cache the last audio buffer so repeat is instant and costs no API call.
+
+#### Feature: Typing fallback
+- **Description**: Let the learner type a question instead of speaking.
+- **Inputs**: T key opens a text field; Enter sends.
+- **Outputs**: transcript string into the same pipeline as speech.
+- **Behavior**: the field is labeled for screen readers and closes after sending.
+
+#### Feature: Audio cues
+- **Description**: Short non-speech sounds for state changes.
+- **Inputs**: state events.
+- **Outputs**: earcons for listening start, listening end, success chime, wrong-answer tone, trade confirmed thump.
+- **Behavior**: generated with the Web Audio API, no sound files.
+
+### Capability: Accessible Interface
+The single-screen web app described in the UI specification (see Appendix A).
+
+#### Feature: Space bar hero
+- **Description**: A giant glass space bar that is the main control.
+- **Inputs**: Space key, pointer.
+- **Outputs**: visual press-down, glow, soundwave inside the key, state change to listening.
+- **Behavior**: the heading above it always tells the learner what to do next ("Press space to talk", "Press N for the next step").
+
+#### Feature: Try asking tray
+- **Description**: A glass panel that slides up from the bottom while the space bar is held.
+- **Inputs**: listening state, number keys 1 to 9, clicks.
+- **Outputs**: chosen suggestion sent on release.
+- **Behavior**: two groups. Lessons (1 to 5) show "Done" and "Up next" tags. Quick questions (6 to 9). The first time it opens, the tutor reads two suggestions aloud.
+
+#### Feature: Numbered options menu
+- **Description**: The tutor offers numbered options, listed vertically under the space bar and read aloud.
+- **Inputs**: number keys 0 to 9, M key, Escape, menu definitions from the tutor.
+- **Outputs**: navigation to lessons, questions, practice, settings, help.
+- **Behavior**: opens on launch and on M. Main menu: 1 Lessons, 2 Ask a question, 3 Practice trading, 4 Settings, 5 Help. Submenus add "0 Back". Gemini may add one context-aware suggestion (for example "Continue Stocks vs. ETFs") through the `suggest_options` tool, labeled "Options from Gemini".
+
+#### Feature: Answer card
+- **Description**: A glass card with the realistic palm visualization, legend, and large caption.
+- **Inputs**: reply text, chart ops.
+- **Outputs**: the caption, the animated drawing, the "Drawing on your palm" status.
+- **Behavior**: hides the canvas when an answer has no chart; legend uses solid versus dashed lines, never color alone.
+
+#### Feature: Bottom dock
+- **Description**: Two always-present buttons: M Menu and R Repeat voice.
+- **Inputs**: clicks, M and R keys.
+- **Outputs**: opens the main menu or repeats the last utterance.
+- **Behavior**: hidden only while the Try asking tray is open.
+
+#### Feature: Settings
+- **Description**: Numbered settings menu.
+- **Inputs**: number keys.
+- **Outputs**: updated, persisted settings and a spoken confirmation ("Speaking speed is now fast").
+- **Behavior**: speaking speed (slow, normal, fast), chart sounds (on or off), text size (standard, large, extra large), palm arm (connect or disconnect), reset lesson progress.
+
+#### Feature: Screen reader support
+- **Description**: Full use with NVDA and VoiceOver.
+- **Inputs**: all UI state.
+- **Outputs**: aria-live announcements, labeled controls, focus kept on the space bar.
+- **Behavior**: every caption is mirrored to a polite live region; the canvas has an alt description per drawing; no information is conveyed by color alone.
+
+### Capability: Tutor Brain
+Gemini function-calling loop that decides what to say and which tools to call.
+
+#### Feature: Function-calling loop
+- **Description**: Turn a learner utterance into a spoken reply plus side effects.
+- **Inputs**: transcript, conversation history, current app state (menu, lesson, pending trade).
+- **Outputs**: reply text, tool results, UI directives (show chart, open menu, start lesson).
+- **Behavior**: up to 5 tool rounds per turn; numbers in the reply must come from tool results in the same turn.
+
+#### Feature: Tool registry
+- **Description**: The 11 core tools from v1 plus 5 tutoring tools.
+- **Inputs**: tool name and JSON arguments.
+- **Outputs**: JSON results.
+- **Behavior**: core: `list_markets`, `get_quote`, `get_price_history`, `show_chart`, `propose_trade`, `confirm_trade`, `cancel_trade`, `get_portfolio`, `run_backtest`, `review_trades`, `check_token_backing`. Tutoring: `start_lesson`, `next_step`, `answer_quiz`, `suggest_options`, `explain_fees`.
+
+#### Feature: Speech style filter
+- **Description**: Make replies sound natural when spoken.
+- **Inputs**: raw model text.
+- **Outputs**: speakable text.
+- **Behavior**: strip markdown; split sentences longer than 25 words; speak numbers naturally ("about 3.5 percent", "five hundred sixty dollars"); describe shapes, never colors; append a one-line risk note whenever a return is mentioned.
+
+#### Feature: Guardrails
+- **Description**: Keep the tutor accurate and safe.
+- **Inputs**: model output, tool log.
+- **Outputs**: approved reply or a corrected reply.
+- **Behavior**: reject any reply containing a price or percent that is not in this turn's tool results; refuse personalized advice ("Sonar teaches, it doesn't recommend"); never claim a trade happened without `confirm_trade` succeeding.
+
+### Capability: Lesson Engine
+Plays the scripted curriculum in Appendix B.
+
+#### Feature: Curriculum loader
+- **Description**: Load lessons from JSON files.
+- **Inputs**: `lessons/*.json`.
+- **Outputs**: validated lesson objects (id, title, steps, quiz).
+- **Behavior**: schema-validate on startup; placeholders like `{AAPL.return_1m}` are filled by tool calls at play time.
+
+#### Feature: Step player
+- **Description**: Play one step: narration, chart, arm drawing, all in sync.
+- **Inputs**: lesson id, step index.
+- **Outputs**: spoken narration, chart ops to the palm and the arm.
+- **Behavior**: resolves data placeholders, starts TTS and the drawing together, ends with "Press N for the next step, or R to repeat". N or right arrow advances, P or left arrow goes back.
+
+#### Feature: Quiz engine
+- **Description**: One multiple-choice check at the end of each lesson.
+- **Inputs**: number key 1 to 3 or a spoken answer.
+- **Outputs**: correct or not, explanation, progress update.
+- **Behavior**: correct gives a chime and a double palm tap, then offers the next lesson; wrong explains why and lets the learner retry.
+
+#### Feature: Progress store
+- **Description**: Remember completed lessons and the next lesson.
+- **Inputs**: quiz results.
+- **Outputs**: progress map; "Up next" lesson.
+- **Behavior**: stored in the database for the demo user and mirrored to localStorage.
+
+### Capability: Trading Engine
+Standalone simulated brokerage with a REST API. Knows nothing about Gemini, voice, or the arm.
+
+#### Feature: Market registry
+- **Description**: Plug-in list of tradable assets.
+- **Inputs**: market modules.
+- **Outputs**: assets VOO, SPY, QQQ, AAPL, MSFT, NVDA, PVOO (and stretch: options).
+- **Behavior**: each market implements `quote`, `fill`, `settle`; adding a market touches no other code.
+
+#### Feature: Ledger
+- **Description**: Cash and positions for the practice account.
+- **Inputs**: fills.
+- **Outputs**: balances, positions, trade history.
+- **Behavior**: starts at $10,000 cash; double-entry rows; never negative cash.
+
+#### Feature: Two-step trades
+- **Description**: Propose, then confirm, enforced in backend code.
+- **Inputs**: side, symbol, quantity; then proposal id plus confirm.
+- **Outputs**: a proposal (price, total, risk note, expiry 60 s), then a fill.
+- **Behavior**: `confirm_trade` fails unless a live proposal exists; weekend fills use the last stored close and say so.
+
+#### Feature: Portfolio and coaching
+- **Description**: Report holdings and give one habit tip.
+- **Inputs**: ledger, trade history.
+- **Outputs**: value, gain or loss, one coaching tip every 3 trades.
+- **Behavior**: tips are rule-based (concentration over 50%, frequent trading, selling after a dip).
+
+#### Feature: Backtest
+- **Description**: "What if I had invested $1,000 a year ago?"
+- **Inputs**: symbol, amount, start date.
+- **Outputs**: end value, return, maximum drawdown and its date.
+- **Behavior**: uses daily closes from Tiger Data.
+
+### Capability: Market Data
+Prices stored and summarized in Tiger Data.
+
+#### Feature: Price ingest
+- **Description**: Load daily and minute prices.
+- **Inputs**: Alpaca market data API; CSV backup files.
+- **Outputs**: rows in the `prices` hypertable.
+- **Behavior**: backfill 2 years of daily bars for 6 symbols; refresh every 15 minutes during market hours.
+
+#### Feature: Continuous aggregates
+- **Description**: Weekly and monthly candles computed by the database.
+- **Inputs**: `prices`.
+- **Outputs**: `candles_weekly`, `candles_monthly`.
+- **Behavior**: refresh policies every hour; tutor tools read aggregates, never raw ticks.
+
+#### Feature: Chart series pipeline
+- **Description**: Turn prices into a palm-sized drawing.
+- **Inputs**: closes for a range.
+- **Outputs**: 12 to 16 normalized points plus key markers (peak, trough, end).
+- **Behavior**: SMA (5-day for 1 month, 20-day for 6 months) then Ramer-Douglas-Peucker down to about 12 points; normalize to the drawing box; shared scale when two series are compared.
+
+#### Feature: CSV fallback
+- **Description**: Keep working if the database is unreachable.
+- **Inputs**: `data/fallback/*.csv`.
+- **Outputs**: same shapes as the database queries.
+- **Behavior**: automatic on connection error; logged.
+
+### Capability: Tokenized Fund Settlement
+PVOO, a practice token on Solana devnet that mirrors one VOO share.
+
+#### Feature: Mint and burn
+- **Description**: Mint PVOO on buy, burn on sell.
+- **Inputs**: confirmed trade.
+- **Outputs**: transaction signature, settlement time in seconds, Explorer link.
+- **Behavior**: SPL token with 6 decimals; custodial devnet key held by the chain service.
+
+#### Feature: Backing check
+- **Description**: Prove tokens are backed.
+- **Inputs**: none.
+- **Outputs**: on-chain supply, ledger total, match yes or no.
+- **Behavior**: compares `getTokenSupply` with the ledger; spoken as "Supply matches the ledger: 2 tokens on chain, 2 in your account".
+
+#### Feature: Ledger-only fallback
+- **Description**: Keep PVOO trades working if devnet is down.
+- **Inputs**: RPC errors or timeouts over 8 s.
+- **Outputs**: ledger fill marked "simulated settlement".
+- **Behavior**: the tutor says so out loud and shows an earlier Explorer link as an example.
+
+### Capability: Chart Output
+Makes every chart perceivable without sight.
+
+#### Feature: Sonification
+- **Description**: Play a chart as sound.
+- **Inputs**: chart ops.
+- **Outputs**: tones from 220 Hz (low) to 880 Hz (high), a click per point, a low thump per tap.
+- **Behavior**: always available with S; automatic when the arm is disconnected or "Chart sounds" is on.
+
+#### Feature: Realistic palm visualization
+- **Description**: On-screen model of the hand and the arm, for sighted judges and helpers.
+- **Inputs**: chart ops, arm telemetry when connected.
+- **Outputs**: animated canvas.
+- **Behavior**: a shaded, realistic palm with creases; a two-joint arm with lift servo solved by inverse kinematics; the stylus lifts between strokes, presses down to draw, and leaves a soft glowing trace; eased motion with acceleration limits; idle breathing sway. Details in Appendix A.4.
+
+#### Feature: Arm path planner
+- **Description**: Convert chart ops into arm commands.
+- **Inputs**: normalized points, taps, pauses.
+- **Outputs**: serial commands (`P` pen, `M` move, `T` tap, `W` wait, `H` home).
+- **Behavior**: maps the drawing box to a 6 x 4 cm area on the palm; caps speed at 4 cm/s.
+
+### Capability: Palm Arm Hardware
+The physical device.
+
+#### Feature: Firmware
+- **Description**: ESP32 firmware driving 2 joint servos and 1 lift servo.
+- **Inputs**: serial commands at 115200 baud.
+- **Outputs**: motion, `OK` and `ERR` acks.
+- **Behavior**: inverse kinematics on the device; trapezoidal velocity profile; soft limits on angles and speed.
+
+#### Feature: Safety
+- **Description**: The learner can always pull away and nothing presses hard.
+- **Inputs**: lift servo position, optional force sensor (stretch).
+- **Outputs**: stylus lifts automatically on timeout or high force.
+- **Behavior**: soft inkless stylus; maximum pressure level 5 of 5 enforced in firmware; auto-lift after 3 s of no commands.
+
+</functional-decomposition>
+
+---
+
+<structural-decomposition>
+
+## Repository Structure
+
+```
+coral/
+├── apps/web/                      # Next.js 15 + TypeScript (Interface + Voice + Tutor routes)
+│   ├── app/page.tsx               # single-screen app shell
+│   ├── app/api/talk/route.ts      # STT -> tutor loop -> reply (Tutor Brain entry)
+│   ├── app/api/tts/route.ts       # ElevenLabs stream, Gemini TTS fallback
+│   ├── components/
+│   │   ├── SpaceBar.tsx           # Space bar hero
+│   │   ├── TryAskingTray.tsx      # Try asking tray
+│   │   ├── OptionsMenu.tsx        # Numbered options menu (+ settings submenu)
+│   │   ├── AnswerCard.tsx         # Answer card, lesson header, quiz options
+│   │   ├── PalmScene.tsx          # Realistic palm visualization (canvas)
+│   │   ├── BottomDock.tsx         # M Menu, R Repeat voice
+│   │   └── AuroraBackground.tsx   # blended animated background
+│   ├── lib/voice/                 # pushToTalk.ts, stt.ts, tts.ts, earcons.ts, repeat.ts
+│   ├── lib/a11y/                  # live.ts, keymap.ts
+│   ├── lib/state/appMachine.ts    # states: menu, listening, thinking, answer, lesson, quiz, confirm, settling
+│   └── lib/palm/                  # hand.ts (geometry), arm.ts (IK + motion), trace.ts, sonify.ts
+├── services/tutor/                # Tutor Brain (TypeScript, used by apps/web routes)
+│   ├── loop.ts                    # Function-calling loop
+│   ├── tools/                     # one file per tool, index.ts registry
+│   ├── prompts/system.md          # rules: tools for numbers, no advice, speech style
+│   ├── speechStyle.ts             # Speech style filter
+│   └── guardrails.ts              # Guardrails
+├── services/lessons/              # Lesson Engine
+│   ├── content/*.json             # curriculum from Appendix B
+│   ├── schema.ts, loader.ts, player.ts, quiz.ts, progress.ts
+├── services/engine/               # Trading Engine (Python 3.12 + FastAPI)
+│   ├── markets/                   # base.py, equity.py, pvoo.py, options.py (stretch)
+│   ├── ledger.py, trades.py, portfolio.py, coaching.py, backtest.py
+│   └── api.py                     # REST: /markets /quote /history /propose /confirm /cancel /portfolio /backtest /review
+├── services/data/                 # Market Data
+│   ├── schema.sql                 # hypertables + continuous aggregates
+│   ├── ingest_alpaca.py, fallback.py, series.py (SMA + RDP + normalize)
+├── services/chain/                # Tokenized Fund Settlement (Node 20)
+│   ├── pvoo.ts                    # createMint, mint, burn, supply
+│   └── server.ts                  # REST: /mint /burn /supply
+├── firmware/palm-arm/             # Palm Arm Hardware (Arduino C++ for ESP32)
+│   ├── palm_arm.ino, ik.h, motion.h, protocol.h
+├── bridge/serial/                 # Arm path planner + Web Serial helper
+│   ├── planner.ts, webserial.ts
+├── data/fallback/*.csv
+└── tests/                         # unit, integration, e2e (Playwright)
+```
+
+## Module Definitions
+
+### Module: voice
+- **Maps to capability**: Voice Interaction
+- **Responsibility**: microphone in, human voice out
+- **Exports**: `startCapture()`, `stopCapture(): Blob`, `transcribe(blob)`, `speak(text, opts)`, `repeatLast()`, `earcon(name)`
+
+### Module: ui
+- **Maps to capability**: Accessible Interface
+- **Responsibility**: render states and route keys
+- **Exports**: `<SpaceBar/>`, `<TryAskingTray/>`, `<OptionsMenu/>`, `<AnswerCard/>`, `<BottomDock/>`, `useKeymap()`, `announce(text)`
+
+### Module: tutor
+- **Maps to capability**: Tutor Brain
+- **Responsibility**: Gemini loop, tools, speech style, guardrails
+- **Exports**: `runTurn(transcript, state)`, `registerTool(def)`, `toSpeech(text)`, `checkReply(reply, toolLog)`
+
+### Module: lessons
+- **Maps to capability**: Lesson Engine
+- **Responsibility**: load, play, quiz, track progress
+- **Exports**: `loadCurriculum()`, `playStep(lessonId, i)`, `gradeQuiz(lessonId, choice)`, `getProgress()`, `nextLesson()`
+
+### Module: engine
+- **Maps to capability**: Trading Engine
+- **Responsibility**: practice brokerage over REST
+- **Exports**: REST endpoints listed above; Python `Market` base class
+
+### Module: data
+- **Maps to capability**: Market Data
+- **Responsibility**: prices, aggregates, chart series
+- **Exports**: `get_quote(sym)`, `get_history(sym, range)`, `chart_series(sym, range, points=12)`, `compare_series(a, b, range)`
+
+### Module: chain
+- **Maps to capability**: Tokenized Fund Settlement
+- **Responsibility**: PVOO mint, burn, supply
+- **Exports**: `POST /mint`, `POST /burn`, `GET /supply`
+
+### Module: palm
+- **Maps to capability**: Chart Output
+- **Responsibility**: on-screen palm and arm model, sonification
+- **Exports**: `PalmScene.draw(ops)`, `PalmScene.tap(at)`, `sonify(ops)`
+
+### Module: bridge
+- **Maps to capability**: Chart Output (arm path planner)
+- **Responsibility**: chart ops to serial commands
+- **Exports**: `plan(ops): string[]`, `connectArm()`, `send(cmds)`
+
+### Module: firmware
+- **Maps to capability**: Palm Arm Hardware
+- **Responsibility**: safe motion
+- **Exports**: serial protocol (Appendix C)
+
+</structural-decomposition>
+
+---
+
+<dependency-graph>
+
+## Dependency Chain
+
+### Foundation Layer (Phase 0)
+No dependencies.
+
+- **config-and-secrets**: env loading for Gemini, ElevenLabs, Alpaca, Tiger Data, Solana RPC; keys never in the repo.
+- **data-schema**: Tiger Data hypertables, continuous aggregates, CSV fallback files.
+- **lesson-content**: curriculum JSON files and schema (Appendix B).
+- **app-shell**: Next.js page, aurora background, keymap, live region, state machine skeleton.
+
+### Data and Engine Layer (Phase 1)
+- **price-ingest**: Depends on [config-and-secrets, data-schema]
+- **series-pipeline**: Depends on [data-schema]
+- **trading-engine**: Depends on [data-schema, config-and-secrets]
+- **chain-service**: Depends on [config-and-secrets]
+- **voice-io**: Depends on [config-and-secrets, app-shell]
+
+### Tutor Layer (Phase 2)
+- **tool-registry**: Depends on [trading-engine, series-pipeline, chain-service]
+- **tutor-loop**: Depends on [tool-registry, config-and-secrets]
+- **speech-style-and-guardrails**: Depends on [tutor-loop]
+- **lesson-engine**: Depends on [lesson-content, tool-registry]
+
+### Experience Layer (Phase 3)
+- **ui-space-bar-and-tray**: Depends on [app-shell, voice-io]
+- **ui-options-menu-and-settings**: Depends on [app-shell, voice-io, tutor-loop]
+- **ui-answer-card-and-lessons**: Depends on [ui-space-bar-and-tray, lesson-engine, tutor-loop]
+- **palm-scene**: Depends on [app-shell, series-pipeline]
+- **sonification**: Depends on [palm-scene]
+- **trade-flow-ui**: Depends on [ui-answer-card-and-lessons, trading-engine, chain-service]
+
+### Hardware Layer (Phase 4)
+- **arm-firmware**: Depends on [config-and-secrets]
+- **arm-bridge**: Depends on [arm-firmware, palm-scene]
+
+### Polish Layer (Phase 5)
+- **accessibility-pass**: Depends on [ui-options-menu-and-settings, ui-answer-card-and-lessons, trade-flow-ui]
+- **demo-and-devpost**: Depends on [accessibility-pass, arm-bridge, sonification]
+
+</dependency-graph>
+
+---
+
+<implementation-roadmap>
+
+## Development Phases
+
+### Phase 0: Foundation (Sat 12 pm to 3 pm)
+**Goal**: everything else can import config, query the schema, read lessons, and render the shell.
+
+**Entry Criteria**: empty repo, API keys in hand.
+
+**Tasks**:
+- [ ] Set up monorepo, env loading, and secrets checks (depends on: none)
+  - Acceptance criteria: app fails fast with a clear message when a key is missing; `.env` is gitignored.
+  - Test strategy: unit test for the config loader.
+- [ ] Create Tiger Data schema and continuous aggregates (depends on: none)
+  - Acceptance criteria: `prices`, `trades`, `positions`, `lesson_progress`, `settings` exist; `candles_weekly` and `candles_monthly` refresh.
+  - Test strategy: integration test inserts sample rows and reads an aggregate.
+- [ ] Write lesson JSON files from Appendix B with a schema validator (depends on: none)
+  - Acceptance criteria: 5 core lessons and 1 stretch lesson validate; placeholders listed per step.
+  - Test strategy: unit test loads every file.
+- [ ] Build the app shell: aurora background, keymap, live region, state machine (depends on: none)
+  - Acceptance criteria: Space, M, R, N, P, 0 to 9, Escape route to state events; no other UI yet.
+  - Test strategy: unit tests on the state machine transitions.
+
+**Exit Criteria**: `npm run dev` shows the background and "Press space to talk"; the database answers queries.
+
+**Delivers**: a skeleton the three teammates can build on in parallel.
+
+---
+
+### Phase 1: Data, Engine, Chain, Voice (Sat 3 pm to 8 pm)
+**Goal**: real prices, a working practice brokerage, PVOO on devnet, and voice in and out.
+
+**Entry Criteria**: Phase 0 complete.
+
+**Tasks**:
+- [ ] Ingest 2 years of daily bars for 6 symbols from Alpaca, with CSV fallback (depends on: config, schema)
+  - Acceptance criteria: 6 symbols x about 500 rows; fallback triggers on DB error.
+  - Test strategy: integration test with the DB down.
+- [ ] Implement chart series pipeline: SMA, RDP to 12 points, normalize, shared scale (depends on: schema)
+  - Acceptance criteria: output has 12 to 16 points in [0,1]; peak marker present.
+  - Test strategy: unit tests with a known series.
+- [ ] Build the trading engine REST API with two-step trades (depends on: schema, config)
+  - Acceptance criteria: `/confirm` without a live proposal returns 409; cash never negative.
+  - Test strategy: unit and API tests.
+- [ ] Deploy PVOO mint and chain service (depends on: config)
+  - Acceptance criteria: mint 2, burn 1, supply 1; Explorer link returned.
+  - Test strategy: integration test on devnet with a timeout fallback.
+- [ ] Wire push-to-talk, ElevenLabs STT, and streaming TTS with Gemini TTS fallback (depends on: config, app-shell)
+  - Acceptance criteria: hold Space, speak, and hear the transcript echoed in under 3 s.
+  - Test strategy: manual check plus a mocked-route unit test.
+
+**Exit Criteria**: from a terminal, propose and confirm a PVOO buy and see supply change; from the browser, hold Space and hear an echo.
+
+**Delivers**: all backends live.
+
+---
+
+### Phase 2: Tutor and Lessons (Sat 8 pm to Sun 12 am)
+**Goal**: the text tutor works end to end, including lessons (milestone: Sat 10 pm text tutor).
+
+**Entry Criteria**: Phase 1 complete.
+
+**Tasks**:
+- [ ] Register the 16 tools with JSON schemas (depends on: engine, series, chain)
+  - Acceptance criteria: each tool callable from a script.
+  - Test strategy: unit test per tool against fixtures.
+- [ ] Build the Gemini function-calling loop and system prompt (depends on: tool registry)
+  - Acceptance criteria: "How did Apple do this month?" answers with numbers from `get_quote` and a `show_chart` directive.
+  - Test strategy: integration test with recorded tool results.
+- [ ] Add the speech style filter and guardrails (depends on: tutor loop)
+  - Acceptance criteria: no markdown; any number missing from the tool log blocks the reply.
+  - Test strategy: unit tests with crafted model outputs.
+- [ ] Build the lesson engine: player, quiz, progress (depends on: lesson content, tool registry)
+  - Acceptance criteria: all 5 core lessons play with filled placeholders; quizzes grade.
+  - Test strategy: unit tests for player and grading.
+
+**Exit Criteria**: a typed conversation completes lesson 1 and a practice PVOO trade.
+
+**Delivers**: a working tutor without the final UI.
+
+---
+
+### Phase 3: Experience (Sun 12 am to 5 am)
+**Goal**: the full voice demo with charts as tones (milestone: Sun 3 am).
+
+**Entry Criteria**: Phase 2 complete.
+
+**Tasks**:
+- [ ] Space bar hero and Try asking tray (depends on: app shell, voice)
+  - Acceptance criteria: matches Appendix A.2 and A.3; numbers 1 to 9 pick while holding.
+  - Test strategy: Playwright e2e with the keyboard only.
+- [ ] Numbered options menu, settings submenu, bottom dock (depends on: app shell, voice, tutor loop)
+  - Acceptance criteria: menu opens on launch and on M; 0 goes back; R repeats instantly.
+  - Test strategy: Playwright e2e.
+- [ ] Answer card, lesson header, quiz options (depends on: tray, lesson engine, tutor loop)
+  - Acceptance criteria: N and P step, 1 to 3 answer, progress dashes update.
+  - Test strategy: Playwright e2e.
+- [ ] Realistic palm scene and sonification (depends on: app shell, series pipeline)
+  - Acceptance criteria: matches Appendix A.4; 60 fps on a laptop; sound plays on S.
+  - Test strategy: visual check and a frame-time log.
+- [ ] Trade confirm and settling flow (depends on: answer card, engine, chain)
+  - Acceptance criteria: Enter confirms, Escape cancels; settlement time spoken; Explorer link shown.
+  - Test strategy: e2e with devnet and with the ledger-only fallback.
+
+**Exit Criteria**: eyes-closed tester runs the demo flow with tones instead of the arm.
+
+**Delivers**: the demoable product.
+
+---
+
+### Phase 4: Palm Arm (in parallel from Sat 3 pm, integrate by Sun 6 am)
+**Goal**: the arm draws what the palm scene shows.
+
+**Entry Criteria**: firmware can start after Phase 0; bridge needs the palm scene.
+
+**Tasks**:
+- [ ] Firmware: IK, motion profile, protocol, safety limits (depends on: config)
+  - Acceptance criteria: draws a 12-point line in a 6 x 4 cm box; auto-lift after 3 s idle.
+  - Test strategy: bench test with a ruler and pressure check.
+- [ ] Bridge: path planner and Web Serial connection (depends on: firmware, palm scene)
+  - Acceptance criteria: the on-screen arm and the real arm move in sync within 200 ms.
+  - Test strategy: side-by-side video.
+
+**Exit Criteria**: "Feel the difference" lesson step draws on a real palm.
+
+**Delivers**: the tactile wow moment.
+
+---
+
+### Phase 5: Polish and Submit (Sun 5 am to 11 am)
+**Goal**: freeze, record, submit (milestones: freeze and backup video Sun 9 am, Devpost Sun 11 am).
+
+**Tasks**:
+- [ ] Accessibility pass with NVDA and VoiceOver (depends on: menu, answer card, trade flow)
+  - Acceptance criteria: every control reachable and announced; no color-only meaning.
+- [ ] Record backup demo video and write the Devpost entry (depends on: accessibility pass, arm bridge, sonification)
+  - Acceptance criteria: 2-minute video; prizes chosen (3 Technica + 3 sponsored).
+
+**Exit Criteria**: submitted by 11 am Sunday; Expo at 1 pm.
+
+</implementation-roadmap>
+
+---
+
+<test-strategy>
+
+## Test Pyramid
+
+```
+        /\
+       /E2E\       ← 15% (Playwright keyboard-only flows, one eyes-closed manual run)
+      /------\
+     /Integration\ ← 35% (engine + DB, chain on devnet, tutor loop with recorded tools)
+    /------------\
+   /  Unit Tests  \ ← 50% (series math, guardrails, state machine, quiz grading, planner)
+  /----------------\
+```
+
+## Coverage Requirements
+- Line coverage: 70% minimum for services/engine, services/tutor, services/lessons
+- Branch coverage: 60% minimum
+- Function coverage: 75% minimum
+- Statement coverage: 70% minimum
+- UI and firmware are covered by e2e and bench tests instead of line coverage.
+
+## Critical Test Scenarios
+
+### Two-step trades
+**Happy path**: propose buy 2 PVOO, confirm. Expected: fill, mint, supply equals ledger.
+**Edge cases**: confirm after 60 s. Expected: "That offer expired, want me to quote it again?"
+**Error cases**: confirm with no proposal. Expected: 409 and the tutor does not claim success.
+**Integration points**: devnet down. Expected: ledger-only fill, spoken notice.
+
+### Guardrails
+**Happy path**: reply numbers all appear in the tool log. Expected: passes.
+**Error cases**: reply contains "up 12 percent" with no tool result. Expected: blocked and regenerated.
+**Edge cases**: "Should I buy NVDA?" Expected: education-only answer, no recommendation.
+
+### Chart series
+**Happy path**: 22 closes in, 12 points out, peak preserved.
+**Edge cases**: flat series. Expected: a centered flat line, narration says "barely moved".
+**Integration points**: compare mode uses one shared scale for both series.
+
+### Lesson engine
+**Happy path**: lesson plays all steps and the quiz passes. Expected: progress saved, "Up next" moves.
+**Error cases**: a placeholder tool fails. Expected: the step speaks without the number and says the data is unavailable.
+
+### Interface
+**Happy path**: launch, hear the menu, press 1, 1, play lesson 1 with N, answer 2. Expected: chime and double tap.
+**Edge cases**: press R before anything was said. Expected: repeats the welcome.
+**Accessibility**: NVDA reads each caption once through the live region; focus stays on the space bar.
+
+## Test Generation Guidelines
+- Prefer deterministic fixtures: seeded price series and recorded Gemini tool calls.
+- Never hit real Alpaca or Gemini in unit tests; devnet only in tagged integration tests.
+- E2E tests drive the app with the keyboard only, as a blind user would.
+
+</test-strategy>
+
+---
+
+<architecture>
+
+## System Components
+
+1. **Learner**: speaks, feels palm charts, hears tones.
+2. **Interface** (apps/web): the single-screen app, push-to-talk, ElevenLabs voice.
+3. **Tutor** (services/tutor + services/lessons): prompts, Gemini function-calling loop, tool registry, lesson engine.
+4. **Trading engine** (services/engine): markets, ledger, settlement over REST.
+5. **Services and hardware**: Tiger Data, Alpaca with CSV backup, Solana devnet chain service, palm arm over Web Serial.
+
+Each layer talks only to its neighbor.
+
+## Data Models
+
+```sql
+CREATE TABLE prices (ts TIMESTAMPTZ NOT NULL, symbol TEXT NOT NULL, open NUMERIC, high NUMERIC, low NUMERIC, close NUMERIC, volume BIGINT);
+SELECT create_hypertable('prices', 'ts');
+CREATE MATERIALIZED VIEW candles_weekly WITH (timescaledb.continuous) AS
+  SELECT time_bucket('7 days', ts) AS bucket, symbol, first(open, ts) AS open, max(high) AS high, min(low) AS low, last(close, ts) AS close
+  FROM prices GROUP BY bucket, symbol;
+-- candles_monthly: same with '30 days'
+CREATE TABLE trades (id UUID PRIMARY KEY, ts TIMESTAMPTZ, side TEXT, symbol TEXT, qty NUMERIC, price NUMERIC, status TEXT, tx_sig TEXT, settle_ms INT);
+CREATE TABLE positions (symbol TEXT PRIMARY KEY, qty NUMERIC, avg_cost NUMERIC);
+CREATE TABLE cash (id INT PRIMARY KEY DEFAULT 1, balance NUMERIC NOT NULL CHECK (balance >= 0));
+CREATE TABLE lesson_progress (lesson_id TEXT PRIMARY KEY, done BOOLEAN, best_step INT, updated TIMESTAMPTZ);
+CREATE TABLE settings (key TEXT PRIMARY KEY, value JSONB);
+```
+
+Lesson JSON:
+
+```json
+{
+  "id": "etf",
+  "title": "Stocks vs. ETFs",
+  "steps": [
+    {
+      "id": "etf-1",
+      "title": "One stock's trend",
+      "say": "Here's Apple over the last month, smoothed with a 5-day average. It's {AAPL.dir_1m} about {AAPL.pct_1m} percent. The tap marks its highest point.",
+      "data": [{"tool": "get_price_history", "args": {"symbol": "AAPL", "range": "1m"}}],
+      "chart": {"series": ["AAPL"], "smooth": "sma5", "points": 12, "markers": ["peak"]},
+      "alt": "Apple trend line with a tap at its peak."
+    }
+  ],
+  "quiz": {"q": "Which usually moves more in a day?", "options": ["One stock", "A broad ETF", "They move the same"], "answer": 0, "why": "An ETF spreads your money across many companies."}
+}
+```
+
+## Technology Stack
+
+- Web: Next.js 15, TypeScript, Canvas 2D for the palm scene, Web Audio, Web Serial.
+- Tutor: Gemini API with function calling (Flash model; exact ID to confirm on the day).
+- Voice: ElevenLabs STT and streaming TTS; Gemini TTS fallback; browser speech last resort.
+- Engine and data: Python 3.12, FastAPI, psycopg, Tiger Data (Postgres + TimescaleDB).
+- Chain: Node 20, @solana/web3.js v1, @solana/spl-token, devnet RPC.
+- Hardware: ESP32, 3 x SG90 or MG90S servos, soft inkless stylus.
+
+**Decision: Voice stack (ElevenLabs primary, Gemini TTS fallback)**
+- **Rationale**: ElevenLabs gives the most natural voice and qualifies for the ElevenLabs prize. Gemini TTS (30 prebuilt voices, style prompts, streaming) is a strong backup and keeps the Gemini prize in play.
+- **Trade-offs**: two vendors to configure; fallback voice sounds different.
+- **Alternatives considered**: Gemini Live API (real-time speech in and out with function calling, most humanlike) as a stretch goal if time remains; browser speechSynthesis rejected as primary because it sounds robotic.
+
+**Decision: Single dark visual theme**
+- **Rationale**: bright text on deep color reads best for low vision; one theme halves the design work.
+- **Trade-offs**: no light mode.
+- **Alternatives considered**: light and dark themes with high-contrast mode (prototyped, judged too complex).
+
+**Decision: Engine in Python, chain in Node**
+- **Rationale**: pandas-friendly backtests; Solana's best SDK is JavaScript.
+- **Trade-offs**: two runtimes.
+- **Alternatives considered**: all TypeScript (possible if the team prefers one language).
+
+</architecture>
+
+---
+
+<risks>
+
+## Technical Risks
+**Risk**: arm hardware fails at Expo
+- **Impact**: High · **Likelihood**: Medium
+- **Mitigation**: automatic switch to tones; on-screen palm scene still animates
+- **Fallback**: backup video of the arm
+
+**Risk**: Gemini invents numbers
+- **Impact**: High · **Likelihood**: Medium
+- **Mitigation**: prompt rule plus the guardrail that blocks numbers not in the tool log
+- **Fallback**: lesson narration uses only template placeholders
+
+**Risk**: reply latency over 4 s
+- **Impact**: Medium · **Likelihood**: Medium
+- **Mitigation**: stream TTS; earcon and "One moment" while thinking; cache quotes for 60 s
+- **Fallback**: shorter replies, Flash-Lite model
+
+## Dependency Risks
+- Solana devnet slow or down: dedicated free RPC, ledger-only settlement, earlier Explorer links.
+- Venue Wi-Fi fails: phone hotspot, recorded backup video.
+- Market closed on the weekend: fills use Friday's close, stated out loud.
+- ElevenLabs quota: Gemini TTS fallback.
+
+## Scope Risks
+- Options market (P2) only after all P0 and P1 items pass.
+- Gemini Live API only if voice latency is the last open issue.
+- Force sensor (P2) only after the arm draws reliably.
+
+</risks>
+
+---
+
+<appendix>
+
+## Appendix A: UI Specification (from the shipped prototype)
+
+### A.1 Visual language
+- One dark theme. Base `#06110F`. Four large blurred color blobs (teal `#0FA595`, sea blue `#2A5FB0`, amber `#FFC95A`, coral `#E8655C`) drift slowly and blend with screen mode; a vignette keeps text legible. While listening the background scales up 8% and saturates.
+- Glass surfaces: `rgba(8,24,22,.46)` with 26 px backdrop blur, 1 px white 20% border, 28 to 32 px radius.
+- Type: Bricolage Grotesque for headings, Atkinson Hyperlegible (designed for low vision) for everything else. Headline up to 5.4 rem; captions 1.25 to 1.6 rem bold.
+- Accent amber `#FFC95A` for focus rings, the Repeat button, and confirm buttons. Chart line A amber solid, line B teal `#86EBDA` dashed, taps coral `#FF8A7A`.
+- Reduced motion: all animation off when the OS asks.
+
+### A.2 Screen states
+1. **Launch / Menu**: heading "Press a number, or space to talk", the space bar, then the numbered options list underneath, vertically. The tutor speaks: "Welcome to Sonar. Press space to talk at any time. Press R to repeat, and M for this menu. What would you like to do? Press 1 for Lessons..."
+2. **Listening**: key presses down 10 px with an amber glow and a 14-bar soundwave; heading "Listening"; Try asking tray slides up; bottom dock hides.
+3. **Thinking**: answer card appears with "You asked: ..." and "Thinking...", earcon plays.
+4. **Answer**: card with palm scene, legend, caption; heading hidden; small space bar under the card; dock visible.
+5. **Lesson**: card header "Lesson 2 of 5 · Step 1 of 4", lesson title, progress dashes (done amber, current white); Back (P) and Next (N) buttons.
+6. **Quiz**: question as the caption, three large numbered options; right answer turns teal, wrong turns coral.
+7. **Confirm trade**: caption reads the price, total, and risk note; buttons "Enter Confirm purchase" and "Esc Cancel".
+8. **Settling**: checklist "Signed with your practice key", "Sent to Solana devnet", "Confirmed in 2.1 seconds"; then the Explorer link and a single palm tap.
+9. **Trade results panel** (on screen, for anyone without the arm): a receipt row (order, asset, shares, price, total, status); a 30-day price chart with the buy or sell point marked and a hover tooltip; a settlement-time bar comparing a regular ETF trade (next business day) with PVOO (seconds); and a practice-account bar splitting holdings and cash. Shown as a preview while confirming and in full after the fill; the portfolio view shows the account bar alone.
+
+### A.3 Menus
+- **Main**: 1 Lessons · 2 Ask a question · 3 Practice trading · 4 Settings · 5 Help.
+- **Lessons**: 1 How to feel a graph · 2 Stocks vs. ETFs · 3 Your first practice trade · 4 Tokenized funds with PVOO · 5 What if? Backtesting and risk · 6 Options basics (stretch). Each shows "Done" or "Up next".
+- **Ask a question**: How has the S&P 500 done this year? · How did Apple do this month? · Compare a stock and an ETF · Explain fees · How fast does PVOO settle?
+- **Practice trading**: Buy 2 PVOO · Buy 1 share of VOO · Sell PVOO · Hear my portfolio · Check PVOO backing.
+- **Settings**: speaking speed · chart sounds · text size · palm arm · reset lesson progress.
+- **Try asking tray**: Lessons 1 to 5, Quick questions 6 to 9.
+
+### A.4 Realistic palm and arm scene
+- **Hand**: an open left hand, palm up, drawn with bezier outlines for palm, four fingers with three phalanges each, and an opposed thumb. Warm skin gradient (radial highlight at the palm center, darker toward the edges), subsurface-style rim light, soft drop shadow. Creases: heart line, head line, life line, and joint creases on each finger. Fingernails are not visible (palm up). Subtle idle breathing: the hand rises and settles 1 to 2 px every 4 s.
+- **Drawing box**: a faint dashed 6 x 4 cm rectangle on the palm, labeled PAST on the left and TODAY on the right.
+- **Arm**: a desk-mounted two-joint arm entering from the lower right. Brushed aluminum links with gradient and highlights, servo hubs with screws, a lift servo at the wrist, and a soft white stylus tip. Pose solved by inverse kinematics every frame.
+- **Motion**: trapezoidal velocity (ease in and out), max 4 cm/s on screen-scaled units; stylus lifts 6 px with a growing shadow between strokes and presses down with a 120 ms ease when drawing. Taps: lift, quick press with a skin dimple ripple, lift.
+- **Trace**: drawn lines look like a soft pressed mark on the skin (glow plus slight indentation shadow) and fade 30% after 10 s.
+- **Status**: "Drawing on your palm", "Drawing finished", or "Sent to your palm arm" when connected.
+
+### A.5 Keyboard map
+| Key | Action |
+| --- | --- |
+| Space (hold) | Talk; release to send |
+| 1 to 9 | Pick a menu option, a Try asking suggestion, or a quiz answer |
+| 0 | Back to the main menu |
+| M | Open the menu |
+| R | Repeat voice (and redraw the chart) |
+| N or right arrow | Next lesson step |
+| P or left arrow | Previous lesson step |
+| S | Play the chart as sound |
+| Enter | Confirm a trade or go to the next step |
+| Escape | Cancel, stop, or go back |
+| T | Type instead of speaking |
+
+## Appendix B: Lesson Curriculum
+
+Numbers in braces are placeholders filled by tools at play time. Every lesson ends with the line "Press N for the next step, or R to repeat" until the quiz.
+
+### Lesson 1: How to feel a graph (2 min)
+Goal: learn the palm's "language".
+1. **Left to right**. Say: "Rest your hand palm up. I'll draw a slow line from left to right. Left is the past. Right is today." Draw: flat line across the box.
+2. **Up means up**. Say: "Now a line that climbs. When the line moves up, the price went up." Draw: rising diagonal.
+3. **The tap**. Say: "Feel that tap? A tap always means something important happened, like a peak or a finished trade." Draw: one tap in the center.
+Quiz: "Where on your palm is today?" Options: the left side, the right side, the center. Answer: right side. Why: drawings always move from the past on the left to today on the right.
+
+### Lesson 2: Stocks vs. ETFs (5 min)
+Goal: understand diversification and fees.
+1. **One stock's trend**. Data: `get_price_history(AAPL, 1m)`. Say: "Here's Apple over the last month, smoothed with a 5-day average. It's {AAPL.dir} about {AAPL.pct} percent. The tap marks its highest point." Draw: AAPL line, tap at the peak.
+2. **What an ETF is**. Say: "An ETF is one share that holds many companies. VOO holds the 500 largest US companies, so you own a tiny slice of each." Draw: none (tone chord).
+3. **Feel the difference**. Data: AAPL and VOO, 1 month, shared scale. Say: "First Apple on its own, then VOO on the same scale. The second line barely moves. That smoothing is diversification." Draw: AAPL solid, pause, VOO dashed.
+4. **Fees add up**. Data: computed by `explain_fees(0.03, 1.0, 30)`. Say: "Two funds with the same returns but different yearly fees, over 30 years. The 1 percent fee leaves you about a quarter less than VOO's 0.03 percent." Draw: two growth curves.
+Quiz: "Which usually moves more in a day: one stock, or a broad ETF?" Answer: one stock.
+
+### Lesson 3: Your first practice trade (4 min)
+Goal: learn quotes, orders, confirmation, and the portfolio.
+1. **Getting a quote**. Data: `get_quote(VOO)`. Say: "VOO last traded at {VOO.price} dollars. That's the price for one share." If the market is closed: "The market is closed, so this is Friday's closing price."
+2. **Two steps to buy**. Say: "Buying always takes two steps. First I read back the order. Nothing happens until you press Enter or say confirm." Action: `propose_trade(buy, VOO, 1)`.
+3. **Confirm**. Action: `confirm_trade(id)`. Say: "Done. You own one share of VOO with practice money. It settles the next business day." Draw: short line and a tap.
+4. **Your portfolio**. Data: `get_portfolio()`. Say: "You have {cash} in practice cash and one VOO share worth {value}." Draw: none.
+Quiz: "What has to happen before Sonar places a trade?" Options: you say confirm; nothing, it buys right away; you wait a day. Answer: you say confirm.
+
+### Lesson 4: Tokenized funds with PVOO (6 min)
+Goal: understand tokenization, its benefits, and its risks.
+1. **What a token is**. Say: "A tokenized fund records your share on a blockchain instead of a broker's private database. PVOO is our practice token. One PVOO stands for one share of VOO."
+2. **Settlement speed**. Say: "A normal ETF trade settles the next business day. That's the long line. A token on Solana settles in about 2 seconds. That's the short line and the tap." Draw: long line, short line, tap.
+3. **Buy PVOO**. Action: propose then confirm 2 PVOO; mint on devnet. Say: "Done. That settled in {settle_s} seconds. Feel the tap."
+4. **Check the backing**. Data: `check_token_backing()`. Say: "Anyone can check this. On chain there are {supply} PVOO, and our ledger says {ledger}. They match, so every token is backed."
+5. **The risks**. Say: "Tokens still depend on trust. The issuer has to really hold the shares. Whoever holds the keys controls the tokens. In this app we hold your keys, like a bank would. And the rules for tokenized securities are still being written." Draw: one tap.
+Quiz: "If you lose your own wallet keys, can a bank reset them?" Answer: no, the tokens are gone.
+
+### Lesson 5: What if? Backtesting and risk (5 min)
+Goal: learn returns, drawdowns, and time in the market.
+1. **The question**. Say: "Let's ask: what if you'd put 1,000 dollars into VOO a year ago?"
+2. **The result**. Data: `run_backtest(VOO, 1000, 1y)`. Say: "It would be worth {end_value} today, a change of {return_pct} percent." Draw: the year's line, tap at the end.
+3. **The worst drop**. Say: "The biggest fall along the way was {max_dd} percent, around {dd_date}. Feel the dip. Holding through drops like this is the hard part." Draw: line with a tap at the trough.
+4. **Past is not a promise**. Say: "This tells you what happened, not what will happen. Prices can fall as well as rise."
+Quiz: "What does a backtest tell you?" Options: what happened in the past; what will happen next year; which stock to buy. Answer: the past.
+
+### Lesson 6: Options basics (stretch, 6 min)
+1. **Buying a call**. Say: "The dashed line is zero. If the stock stays low, you lose only the 2 dollars you paid. Past the strike price, the line climbs. The tap marks break-even." Draw: zero line, hockey stick, tap.
+2. **Buying a put**. Mirror image.
+3. **Time works against you**. Draw: value decaying faster near expiration. Say that most beginners lose money on options; paper money only.
+Quiz: "You paid 2 dollars for a call. The stock crashed. What's the most you can lose?" Answer: 2 dollars.
+
+## Appendix C: Arm Serial Protocol
+- `H` home and lift · `P0` lift, `P1` lower · `M x y` move to normalized x, y in [0,1] inside the 6 x 4 cm box · `T ms` tap · `W ms` wait · `F n` set max pressure 1 to 5.
+- Device replies `OK` or `ERR code`. Auto-lift after 3 s without a command.
+
+## References
+- Gemini API speech generation docs (TTS models, voices, style prompts).
+- Gemini Live API docs (real-time voice, function calling).
+- TimescaleDB continuous aggregates docs.
+- Solana SPL Token program docs.
+- Technica 2026 Devpost challenge list.
+
+## Glossary
+- **ETF**: exchange-traded fund, one share that holds many assets.
+- **PVOO**: Sonar's practice SPL token on Solana devnet, one per VOO share.
+- **Settlement**: when a trade is final. T+1 means the next business day.
+- **Drawdown**: the fall from a high to a later low.
+- **Sonification**: turning data into sound.
+- **Earcon**: a short non-speech sound that signals an event.
+
+## Open Questions
+- Team size and roles (plan assumes three people: voice and UI, engine and data, arm).
+- Arm design: two-joint arm or pen-plotter style (UI assumes two-joint).
+- Exact Gemini Flash model ID for the tutor loop.
+- Submit to Gemini or Tiger Data as the third sponsored prize.
+
+</appendix>
+
+---
+
+<task-master-integration>
+Parse with `task-master parse-prd .taskmaster/docs/prd.txt --num-tasks 24`. Each `### Capability:` becomes a task, each `#### Feature:` a subtask, and the Dependency Chain sets task dependencies. Phase 0 tasks have the highest priority.
+</task-master-integration>

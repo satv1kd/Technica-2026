@@ -1,0 +1,38 @@
+{
+  "id": "first-trade",
+  "title": "Your first practice trade",
+  "steps": [
+    {
+      "id": "trade-1",
+      "title": "Getting a quote",
+      "say": "VOO last traded at {VOO.price} dollars. That's the price for one share. If the market is closed, this is Friday's closing price.",
+      "data": [{ "tool": "get_quote", "args": { "symbol": "VOO" } }]
+    },
+    {
+      "id": "trade-2",
+      "title": "Two steps to buy",
+      "say": "Buying always takes two steps. First I read back the order. Nothing happens until you press Enter or say confirm.",
+      "action": [{ "tool": "propose_trade", "args": { "side": "buy", "symbol": "VOO", "qty": 1 } }]
+    },
+    {
+      "id": "trade-3",
+      "title": "Confirm",
+      "say": "Done. You own one share of VOO with practice money. It settles the next business day.",
+      "action": [{ "tool": "confirm_trade", "args": { "proposal": "$last" } }],
+      "chart": { "series": [], "shape": "short-line-tap" },
+      "alt": "A short line and a tap."
+    },
+    {
+      "id": "trade-4",
+      "title": "Your portfolio",
+      "say": "You have {cash} in practice cash and one VOO share worth {value}.",
+      "data": [{ "tool": "get_portfolio", "args": {} }]
+    }
+  ],
+  "quiz": {
+    "q": "What has to happen before Sonar places a trade?",
+    "options": ["You say confirm", "Nothing, it buys right away", "You wait a day"],
+    "answer": 0,
+    "why": "Every trade needs a spoken or typed confirm after the read-back."
+  }
+}
