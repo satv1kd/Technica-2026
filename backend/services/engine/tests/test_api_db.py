@@ -74,7 +74,7 @@ def test_health_and_markets(env):
     client, *_ = env
     assert client.get("/health").json()["market_open"] is False
     symbols = sorted(m["symbol"] for m in client.get("/markets").json()["markets"])
-    assert symbols == ["AAPL", "MSFT", "NVDA", "PVOO", "QQQ", "SPY", "VOO"]
+    assert symbols == ["AAPL", "MSFT", "NVDA", "PVOO", "QQQ", "SPY", "VOO", "options"]
 
 
 def test_quote_matches_the_database(env):

@@ -146,3 +146,22 @@ describe("drawOnArm", () => {
     expect(logged[0]).toMatch(/ERR_TIMEOUT/);
   });
 });
+
+describe("payoff chart", () => {
+  it("draws zero, the hockey stick, and a break-even tap the arm can follow", async () => {
+    const { opsFromPayoff } = await import("@services/chart/ops");
+    const ops = opsFromPayoff({
+      type: "call", strike: 100, breakeven: 104, contract_cost: 400,
+      payoff_at_expiry: [70, 85, 100, 115, 130].map((price) => ({ price, profit: Math.max(0, price - 100) * 100 - 400 })),
+    });
+    const [zero, , line, tap] = ops.ops as any[];
+    expect(zero.style).toBe("dashed");
+    expect(line.points.slice(0, 3).map((p: any) => p.y)).toEqual([0, 0, 0]); // flat loss up to the strike
+    expect(line.points.at(-1)).toEqual({ x: 1, y: 1 });
+    expect(tap.at.x).toBeCloseTo((104 - 70) / 60);
+    expect(tap.at.y).toBeCloseTo(zero.points[0].y);
+    expect(ops.alt).toMatch(/break-even at 104/);
+    // Every point is inside the unit box, so the arm planner can draw it.
+    expect(plan(ops).filter((c) => c.startsWith("M")).every((c) => c.split(" ").slice(1).every((n) => +n >= 0 && +n <= 1))).toBe(true);
+  });
+});

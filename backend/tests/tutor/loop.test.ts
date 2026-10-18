@@ -7,11 +7,12 @@ import { call, deps, fakeEngine, say, scripted } from "./fakes";
 describe("tool registry", () => {
   const decls = declarations(buildRegistry());
 
-  it("exposes the 16 tools from the PRD to the model", () => {
+  it("exposes the 16 tools from the PRD, plus the two options tools, to the model", () => {
     expect(decls.map((d) => d.name).sort()).toEqual([
       "answer_quiz", "cancel_trade", "check_token_backing", "confirm_trade", "explain_fees",
-      "get_portfolio", "get_price_history", "get_quote", "list_markets", "next_step",
-      "propose_trade", "review_trades", "run_backtest", "show_chart", "start_lesson", "suggest_options",
+      "get_option_quote", "get_portfolio", "get_price_history", "get_quote", "list_markets", "next_step",
+      "propose_option_trade", "propose_trade", "review_trades", "run_backtest", "show_chart", "start_lesson",
+      "suggest_options",
     ]);
   });
 
@@ -155,5 +156,43 @@ describe("two-step trades through the tutor", () => {
     const r = await runAction(deps(scripted([]).generate, engine), { type: "confirm" }, {});
     expect(r.reply).toMatch(/no order waiting/i);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("options tools", () => {
+  const QUOTE = {
+    symbol: "AAPL-C-350-20261120", type: "call", strike: 350, breakeven: 358.01, contract_cost: 801,
+    max_loss: 801, max_gain: null, premium_per_share: 8.01,
+    payoff_at_expiry: [245, 280, 315, 350, 385, 420, 455].map((price) => ({
+      price, profit: Math.max(0, price - 350) * 100 - 801,
+    })),
+  };
+
+  it("prices a contract, draws the hockey stick, and keeps the payoff out of the prompt", async () => {
+    const { engine, calls } = fakeEngine({ "/options/quote": QUOTE });
+    const { generate, requests } = scripted([
+      [call("get_option_quote", { underlying: "AAPL", type: "call", strike: 350, expiry: "2026-11-20" })],
+      [say("One contract costs $801, and that's the most you can lose. You profit above $358.01 at expiry.")],
+    ]);
+    const r = await runTurn(deps(generate, engine), { transcript: "What would an Apple 350 call for November cost?" });
+
+    expect(calls[0].path).toBe("/options/quote?underlying=AAPL&type=call&strike=350&expiry=2026-11-20");
+    const chart = r.directives.find((d) => d.type === "chart");
+    expect(chart && chart.type === "chart" && chart.chart.ops.map((o) => o.op)).toEqual(["stroke", "pause", "stroke", "tap"]);
+    expect(JSON.stringify(requests[1].contents)).not.toContain("payoff_at_expiry");
+    expect(r.guardrail?.blocked).toBe(false);
+  });
+
+  it("proposes an options trade by contract parts and waits for confirmation", async () => {
+    const { engine, calls } = fakeEngine();
+    const { generate } = scripted([
+      [call("propose_option_trade", { side: "buy", underlying: "NVDA", type: "put", strike: 180, expiry: "2026-12-18", contracts: 1 })],
+      [say("Here's the order. Say confirm to place it.")],
+    ]);
+    const r = await runTurn(deps(generate, engine), { transcript: "Buy one Nvidia 180 put for December" });
+
+    expect(calls[0]).toEqual({ path: "/propose", body: { side: "buy", symbol: "NVDA-P-180-20261218", qty: "1" } });
+    expect(r.state.pendingProposal?.id).toBeDefined();
+    expect(r.directives.some((d) => d.type === "confirm")).toBe(true);
   });
 });

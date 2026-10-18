@@ -1,4 +1,4 @@
-import { opsFromEngineChart } from "../../chart/ops";
+import { opsFromEngineChart, opsFromPayoff } from "../../chart/ops";
 import { qs } from "../engine";
 import type { Tool, ToolContext } from "./types";
 
@@ -96,6 +96,51 @@ export const proposeTrade: Tool = {
   },
 };
 
+const CONTRACT = {
+  underlying: { type: "string", enum: ["VOO", "SPY", "QQQ", "AAPL", "MSFT", "NVDA"] },
+  type: { type: "string", enum: ["call", "put"] },
+  strike: { type: "number", description: "Strike price in dollars" },
+  expiry: { type: "string", description: "Expiration date, YYYY-MM-DD" },
+};
+
+export const getOptionQuote: Tool = {
+  name: "get_option_quote",
+  description:
+    "Price a practice option contract (100 shares) and draw its profit at expiry on the palm. Returns the cost, " +
+    "break-even, most you can lose, and most you can gain. For teaching; options are a stretch topic.",
+  parameters: { type: "object", properties: CONTRACT, required: ["underlying", "type", "strike", "expiry"] },
+  async execute({ underlying, type, strike, expiry }, ctx) {
+    const quote = await ctx.engine(`/options/quote${qs({ underlying, type, strike, expiry })}`);
+    ctx.directives.push({ type: "chart", chart: opsFromPayoff(quote) });
+    return quote;
+  },
+  // The payoff points are for the drawing; the model narrates the summary.
+  forModel: ({ payoff_at_expiry, ...rest }) => rest,
+};
+
+export const proposeOptionTrade: Tool = {
+  name: "propose_option_trade",
+  description:
+    "Step 1 of a practice options trade: read back the contract, cost, and risk. Nothing is bought yet. " +
+    "Learners can buy contracts or sell ones they own, never write new ones. Confirm with confirm_trade.",
+  parameters: {
+    type: "object",
+    properties: {
+      side: { type: "string", enum: ["buy", "sell"] },
+      ...CONTRACT,
+      contracts: { type: "number", description: "Number of contracts (whole numbers)" },
+    },
+    required: ["side", "underlying", "type", "strike", "expiry", "contracts"],
+  },
+  async execute({ side, underlying, type, strike, expiry, contracts }, ctx) {
+    const symbol = `${String(underlying).toUpperCase()}-${String(type)[0].toUpperCase()}-${strike}-${String(expiry).replace(/-/g, "")}`;
+    const proposal = await ctx.engine("/propose", { method: "POST", body: { side, symbol, qty: String(contracts) } });
+    ctx.state.pendingProposal = { id: proposal.id };
+    ctx.directives.push({ type: "confirm", proposal });
+    return proposal;
+  },
+};
+
 export class ConfirmRefused extends Error {}
 
 export const confirmTrade: Tool = {
@@ -177,4 +222,5 @@ export const checkTokenBacking: Tool = {
 export const TRADING_TOOLS = [
   listMarkets, getQuote, getPriceHistory, showChart, proposeTrade, confirmTrade,
   cancelTrade, getPortfolio, runBacktest, reviewTrades, checkTokenBacking,
+  getOptionQuote, proposeOptionTrade,
 ];
