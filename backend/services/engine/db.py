@@ -25,14 +25,18 @@ def conninfo(url: str, password: str | None = None) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
-def make_pool(settings: Settings, max_size: int = 5) -> ConnectionPool:
+def make_pool(settings: Settings, max_size: int = 5, timeout: float = 30) -> ConnectionPool:
     pool = ConnectionPool(
         conninfo(settings.database_url, settings.database_password),
         min_size=1,
         max_size=max_size,
         open=False,
     )
-    pool.open(wait=True, timeout=30)
+    try:
+        pool.open(wait=True, timeout=timeout)
+    except Exception:
+        pool.close()
+        raise
     return pool
 
 

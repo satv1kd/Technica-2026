@@ -5,6 +5,7 @@ Knows nothing about Gemini, voice, or the arm. Run from services/engine:
     .venv/Scripts/python -m uvicorn api:app --port 8000
 """
 
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backtest import NotEnoughHistory, backtest
+from fallback import DB_DOWN, CsvPriceSource, DatabaseUnavailable, FallbackPriceSource, OfflineLedger
 from ledger import InsufficientFunds, InsufficientShares, LedgerStore, TradeRecord
 from markets import MarketRegistry, NoPriceData, UnknownSymbol
 from markets.pvoo import ChainUnavailable
@@ -23,6 +25,8 @@ from portfolio import STARTING_CASH, summarize
 from series import MAX_POINTS, MIN_POINTS, chart_series
 from prices import PriceSource, UnknownRange, market_open, price_note, range_start
 from trades import InvalidOrder, NoProposal, Proposal, ProposalExpired, TradeDesk, utcnow
+
+log = logging.getLogger("sonar.engine")
 
 
 @dataclass
@@ -33,6 +37,18 @@ class Services:
     desk: TradeDesk
     clock: Callable[[], datetime] = utcnow
     close: Callable[[], None] = lambda: None
+    # True when the engine started without a database: prices come from CSV
+    # and the account endpoints answer 503.
+    offline: bool = False
+
+
+def offline_services(chain) -> Services:
+    from markets import default_registry
+
+    prices = CsvPriceSource()
+    registry = default_registry(prices, chain)
+    ledger = OfflineLedger()
+    return Services(prices, registry, ledger, TradeDesk(registry, ledger), offline=True)
 
 
 def build_services() -> Services:
@@ -41,15 +57,25 @@ def build_services() -> Services:
     from ledger import Ledger
     from markets import default_registry
     from markets.pvoo import HttpChainClient
-    from fallback import CsvPriceSource, FallbackPriceSource
     from prices import PriceStore
 
     settings = load_settings()
-    pool = make_pool(settings)
+    chain = HttpChainClient(settings.chain_url)
+    try:
+        pool = make_pool(settings, timeout=10)
+    except DB_DOWN as exc:
+        log.warning("Database unreachable at startup (%s); serving prices from CSV, "
+                    "account endpoints offline", type(exc).__name__)
+        return offline_services(chain)
+    try:
+        account_id = resolve_account(pool, settings.account_id)
+    except BaseException:
+        pool.close()
+        raise
     # Quotes, history, and backtests keep working from CSV if the database drops.
     prices = FallbackPriceSource(PriceStore(pool), CsvPriceSource())
-    registry = default_registry(prices, HttpChainClient(settings.chain_url))
-    ledger = Ledger(pool, resolve_account(pool, settings.account_id))
+    registry = default_registry(prices, chain)
+    ledger = Ledger(pool, account_id)
     return Services(prices, registry, ledger, TradeDesk(registry, ledger), close=pool.close)
 
 
@@ -113,6 +139,8 @@ ERRORS: list[tuple[type[Exception], int, str]] = [
     (UnknownRange, 400, "bad_range"),
     (NotEnoughHistory, 422, "not_enough_history"),
     (NoPriceData, 503, "no_price_data"),
+    (DatabaseUnavailable, 503, "database_unavailable"),
+    *((t, 503, "database_unavailable") for t in DB_DOWN),
 ]
 
 
@@ -138,7 +166,12 @@ def create_app(services: Services | None = None) -> FastAPI:
     @app.get("/health")
     def health(request: Request):
         s = svc(request)
-        return {"ok": True, "market_open": market_open(s.clock()), "symbols": len(s.registry.symbols())}
+        return {
+            "ok": True, "market_open": market_open(s.clock()), "symbols": len(s.registry.symbols()),
+            "prices": "csv" if s.offline else "database",
+            "csv_fallbacks": getattr(s.prices, "fallback_count", 0),
+            "account": "offline" if s.offline else "online",
+        }
 
     @app.get("/markets")
     def markets(request: Request):

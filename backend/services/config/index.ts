@@ -23,6 +23,7 @@ const requiredSchema = z.object({
 const optionalSchema = z.object({
   DATABASE_PASSWORD: z.string().optional(),
   ALPACA_KEY_ID: z.string().optional(),
+  ALPACA_API_KEY: z.string().optional(),
   ALPACA_SECRET_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().min(1).default("EXAVITQu4vr4xnSDxMaL"),
   GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),

@@ -34,8 +34,13 @@ class MissingAlpacaKeys(RuntimeError):
     pass
 
 
+def alpaca_key_id() -> str:
+    # Alpaca's dashboard labels this "API Key", so accept ALPACA_API_KEY too.
+    return (os.getenv("ALPACA_KEY_ID") or os.getenv("ALPACA_API_KEY") or "").strip()
+
+
 def alpaca_client(transport: httpx.BaseTransport | None = None) -> httpx.Client:
-    key, secret = os.getenv("ALPACA_KEY_ID", "").strip(), os.getenv("ALPACA_SECRET_KEY", "").strip()
+    key, secret = alpaca_key_id(), os.getenv("ALPACA_SECRET_KEY", "").strip()
     if not key or not secret:
         raise MissingAlpacaKeys("Set ALPACA_KEY_ID and ALPACA_SECRET_KEY in .env to fetch prices.")
     return httpx.Client(
