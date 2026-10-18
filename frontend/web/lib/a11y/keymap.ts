@@ -10,7 +10,8 @@ export type KeyAction =
   | { type: "sonify" }
   | { type: "confirm" }
   | { type: "escape" }
-  | { type: "type" };
+  | { type: "type" }
+  | { type: "stop-arm" };
 
 export interface KeyLike {
   key: string;
@@ -31,6 +32,7 @@ export function keyDownAction(e: KeyLike): KeyAction | null {
     case "arrowleft": return { type: "prev" };
     case "s": return { type: "sonify" };
     case "t": return { type: "type" };
+    case "x": return { type: "stop-arm" };
     case "enter": return { type: "confirm" };
     case "escape": return { type: "escape" };
     default: return null;

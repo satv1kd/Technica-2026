@@ -6,6 +6,10 @@ import type { ArmLink } from "./webserial";
 export { ArmLink } from "./webserial";
 export { plan } from "./planner";
 
+// The real PalmDraw arm (UNO R4 firmware: "W x1 y1 x2 y2", ok / err replies).
+export * from "./palmArm";
+export * from "./palmChart";
+
 /**
  * Draw a chart on the physical arm alongside the on-screen palm. Resolves
  * false instead of throwing when the arm isn't connected or the drawing

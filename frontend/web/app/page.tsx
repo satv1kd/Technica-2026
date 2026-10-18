@@ -12,7 +12,11 @@ import { TradeResults, type HistoryPoint } from "../components/TradeResults";
 import { SINGLE_TAP, hasDetails, offerDeadline, secondsLeft, type Portfolio, type TradeProposal, type TradeResult } from "../lib/trade";
 import { answerView, type QuizView } from "../lib/answer";
 import { clearDone, loadDone, markDone, mergeDone } from "../lib/progressCache";
-import { plan } from "../../../backend/bridge/serial/planner";
+import {
+  MockTransport, PalmArm, WebSerialTransport, chooseSerialPort, webSerialSupported, type ArmState,
+} from "../../../backend/bridge/serial/palmArm";
+import { chartSegments, drawSegments, type DrawJob } from "../../../backend/bridge/serial/palmChart";
+import { ArmControls, armStatusText } from "../components/ArmControls";
 import { shouldAutoSonify, sonify, stopSonify } from "../lib/palm/sonify";
 import type { StepView } from "../../../backend/services/lessons/player";
 import type { ChartOps } from "../../../backend/services/chart/ops";
@@ -33,7 +37,6 @@ import {
 } from "../lib/menus";
 import { OptionsMenu } from "../components/OptionsMenu";
 import { BottomDock } from "../components/BottomDock";
-import { ArmLink } from "../../../backend/bridge/serial/webserial";
 import { DEFAULT_LESSONS, TRAY_TIP_FLAG, trayItems, trayPick, trayTip, type TrayItem } from "../lib/tray";
 import { SpaceBar } from "../components/SpaceBar";
 import { TryAskingTray } from "../components/TryAskingTray";
@@ -108,12 +111,19 @@ export default function Home() {
   const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
   settingsRef.current = settings;
   const [gemini, setGemini] = useState<GeminiOption | null>(null);
-  const arm = useRef<ArmLink | null>(null);
-  const [armConnected, setArmConnected] = useState(false);
+  const arm = useRef<PalmArm | null>(null);
+  const [armState, setArmState] = useState<ArmState>("disconnected");
+  const armConnected = armState !== "disconnected" && armState !== "connecting";
+  const [armProgress, setArmProgress] = useState<{ drawn: number; total: number } | null>(null);
+  const [armLog, setArmLog] = useState<string[]>([]);
+  const armJob = useRef<DrawJob | null>(null);
+  // ?arm=mock (or localStorage sonar-arm-mock=1) tests the whole flow without hardware.
+  const [armMock, setArmMock] = useState(false);
+  const [armSupported, setArmSupported] = useState(false);
   const resetArmedAt = useRef(0);
   const menu = buildMenu(menuId, {
     lessons, settings, armConnected, gemini,
-    armSupported: typeof navigator !== "undefined" && ArmLink.supported(),
+    armSupported: armSupported || armMock,
   });
 
   const choose = useCallback((key: number | null) => {
@@ -142,6 +152,81 @@ export default function Home() {
   const say = useCallback((text: string, speed = settingsRef.current.speed) => {
     speaker.current ??= new Speaker();
     return speaker.current.speak(text, speed);
+  }, []);
+
+  /** Draw a chart on the physical arm, one W line per segment. A new chart replaces the old one. */
+  const drawOnArm = useCallback((c: ChartOps | null) => {
+    const a = arm.current;
+    armJob.current?.cancel();
+    if (!c || !a || (a.state !== "ready" && a.state !== "busy")) return;
+    const segments = chartSegments(c);
+    if (!segments.length) return;
+    setArmProgress({ drawn: 0, total: segments.length });
+    const job = drawSegments(a, segments, (drawn, total) => {
+      if (armJob.current === job) setArmProgress({ drawn, total });
+    });
+    armJob.current = job;
+    void job.done.then(() => {
+      if (armJob.current === job) { armJob.current = null; setArmProgress(null); }
+    });
+  }, []);
+
+  const connectArm = useCallback(async () => {
+    const a = (arm.current ??= new PalmArm());
+    a.onState = setArmState;
+    if (!a.connected) {
+      a.onLog((m) => setArmLog((l) => [...l.slice(-7), m.replace(/^send: /, "")].filter((x) => !x.startsWith("arm: "))));
+    }
+    try {
+      const transport = armMock ? new MockTransport(600) : new WebSerialTransport(await chooseSerialPort());
+      setMessage(armMock ? "Connecting the mock arm…" : "Connecting the palm arm… the board restarts, this takes a few seconds.");
+      await a.connect(transport);
+      setMessage(armMock ? "Mock arm connected." : "Palm arm connected.");
+      void say(armMock ? "Mock arm connected." : "Palm arm connected. Charts will be drawn on your palm.");
+    } catch (err) {
+      const why = (err as Error).message;
+      if ((err as Error).name === "NotFoundError") { setMessage("No port chosen."); return; } // picker cancelled
+      setMessage(`The palm arm didn't connect. ${why}`);
+      void say("The palm arm didn't connect. Check the USB cable, and close the Arduino Serial Monitor.");
+    }
+  }, [armMock, say]);
+
+  const disconnectArm = useCallback(async () => {
+    armJob.current?.cancel();
+    await arm.current?.disconnect();
+    setArmProgress(null);
+    setMessage("Palm arm disconnected.");
+    void say("Palm arm disconnected. Charts will play as sound.");
+  }, [say]);
+
+  /** Emergency stop: X goes out at once; the arm stays limp until Resume. */
+  const stopArm = useCallback(async () => {
+    armJob.current?.cancel();
+    armJob.current = null;
+    setArmProgress(null);
+    if (!arm.current?.connected) return;
+    await arm.current.stop().catch(() => {});
+    setMessage("Arm stopped. Press Resume arm to turn it back on.");
+    void say("Arm stopped.");
+  }, [say]);
+
+  const resumeArm = useCallback(async () => {
+    try {
+      await arm.current?.resume();
+      setMessage("Arm resumed.");
+    } catch (err) {
+      setMessage(`The arm didn't resume. ${(err as Error).message}`);
+    }
+  }, []);
+
+  const traceArmBox = useCallback(async () => {
+    try {
+      setMessage("Tracing the drawing box. Rest your hand where the arm moves.");
+      await arm.current?.traceBox();
+      setMessage("Box traced.");
+    } catch (err) {
+      setMessage(`The arm couldn't trace the box. ${(err as Error).message}`);
+    }
   }, []);
 
   /** Play the current chart as rising and falling tones. */
@@ -211,7 +296,7 @@ export default function Home() {
     nextLessonRef.current = view.nextLessonId;
     go({ type: "REPLY_READY", kind: view.kind });
     // Drawings go to the palm arm too when it's connected.
-    if (view.chart && arm.current?.connected) void arm.current.send(plan(view.chart)).catch(() => {});
+    drawOnArm(view.trade && !view.chart ? SINGLE_TAP : view.chart);
     const quiz = result.directives?.find((directive) => directive.type === "quiz_result");
     if (quiz?.type === "quiz_result") {
       earcon(quiz.result.correct ? "success" : "wrong");
@@ -234,7 +319,7 @@ export default function Home() {
       if (p?.tip) void speaker.current?.speak(`Habit tip: ${p.tip}`, loadSettings().speed);
       else speakTipIfPending();
     });
-  }, [speakTipIfPending, playChart]);
+  }, [speakTipIfPending, playChart, drawOnArm]);
 
   const send = useCallback(async (question: string, controller: AbortController) => {
     if (controller.signal.aborted) return;
@@ -344,7 +429,7 @@ export default function Home() {
   const openMenu = useCallback((id: MenuId, intro?: string) => {
     const next = buildMenu(id, {
       lessons, settings: settingsRef.current, armConnected, gemini,
-      armSupported: ArmLink.supported(),
+      armSupported: armSupported || armMock,
     });
     menuIdRef.current = id;
     setMenuId(id);
@@ -353,42 +438,27 @@ export default function Home() {
     const lead = intro ?? (!welcomed.current && id === "main" ? WELCOME : undefined);
     welcomed.current = true;
     void say(speakMenu(next).replace(/^Main menu\. /, lead ? `${lead} ` : "Main menu. "));
-  }, [lessons, armConnected, gemini, say]);
+  }, [lessons, armConnected, armSupported, armMock, gemini, say]);
 
   const replay = useCallback(() => {
     if (state === "listening" || state === "thinking") return;
     // R before anything was said repeats the welcome.
     if (!speaker.current?.last) { openMenu("main"); return; }
-    void repeat(speaker.current, () => setPlayKey((key) => key + 1), loadSettings().speed).then((ok) => {
+    void repeat(speaker.current, () => { setPlayKey((key) => key + 1); drawOnArm(chartRef.current); }, loadSettings().speed).then((ok) => {
       if (ok && shouldAutoSonify(loadSettings(), !!arm.current?.connected)) void playChart(chartRef.current);
     });
-  }, [state, openMenu, playChart]);
+  }, [state, openMenu, playChart, drawOnArm]);
 
   /** Settings changes are saved, applied, shown, and spoken at the new speed. */
   const changeSetting = useCallback(async (key: "speed" | "chartSounds" | "textSize" | "arm" | "reset") => {
     if (key === "arm") {
-      if (!ArmLink.supported()) {
+      if (!webSerialSupported() && !armMock) {
         setMessage("The palm arm needs Chrome or Edge.");
         void say("The palm arm needs Chrome or Edge, which can talk to it over USB.");
         return;
       }
-      arm.current ??= new ArmLink();
-      try {
-        if (arm.current.connected) {
-          await arm.current.disconnect();
-          setArmConnected(false);
-          setMessage("Palm arm disconnected.");
-          void say("Palm arm disconnected. Charts will play as sound.");
-        } else {
-          await arm.current.connect();
-          setArmConnected(true);
-          setMessage("Palm arm connected.");
-          void say("Palm arm connected.");
-        }
-      } catch {
-        setMessage("The palm arm didn't connect.");
-        void say("The palm arm didn't connect. Check the USB cable and try again.");
-      }
+      if (arm.current?.connected) await disconnectArm();
+      else await connectArm();
       return;
     }
     if (key === "reset") {
@@ -421,7 +491,7 @@ export default function Home() {
     applyTextSize(next.textSize);
     setMessage(spoken);
     void say(spoken, next.speed);
-  }, [say]);
+  }, [say, armMock, connectArm, disconnectArm]);
 
   /** Run a menu command. */
   const run = useCallback((cmd: Command, label: string) => {
@@ -449,12 +519,12 @@ export default function Home() {
 
   const chooseMenu = useCallback((n: number) => {
     const current = buildMenu(menuIdRef.current, {
-      lessons, settings: settingsRef.current, armConnected, gemini, armSupported: ArmLink.supported(),
+      lessons, settings: settingsRef.current, armConnected, gemini, armSupported: armSupported || armMock,
     });
     const choice = menuChoice(current, n);
     if (choice === "back") { interrupt(); setMessage(""); openMenu("main"); }
     else if (choice) run(choice.cmd, choice.label);
-  }, [lessons, armConnected, gemini, run, interrupt, openMenu]);
+  }, [lessons, armConnected, armSupported, armMock, gemini, run, interrupt, openMenu]);
 
   const handle = useCallback((action: KeyAction) => {
     const state = stateRef.current;
@@ -480,6 +550,9 @@ export default function Home() {
           void act({ type: "quiz_answer", choice: action.n }, `Answer ${action.n}`, fresh());
         } else if (action.n === 0) { interrupt(); setMessage(""); openMenu("main"); }
         break;
+      case "stop-arm":
+        void stopArm();
+        break;
       case "sonify":
         // S plays the current chart as sound (it stops any chart already playing).
         if (chartRef.current && state !== "listening") { speaker.current?.stop(); void playChart(chartRef.current); }
@@ -501,7 +574,13 @@ export default function Home() {
         } else void act({ type: "confirm" }, "", fresh());
         break;
     }
-  }, [start, end, replay, interrupt, state, choose, typing, chooseMenu, openMenu, act, fresh, lessonView, expired, proposal, playChart]);
+  }, [start, end, replay, interrupt, state, choose, typing, chooseMenu, openMenu, act, fresh, lessonView, expired, proposal, playChart, stopArm]);
+
+  // Mock mode and Web Serial support are only known in the browser.
+  useEffect(() => {
+    setArmSupported(webSerialSupported());
+    setArmMock(new URLSearchParams(window.location.search).get("arm") === "mock" || flag("arm-mock"));
+  }, []);
 
   // The 60-second offer clock. When it runs out, say so once.
   useEffect(() => {
@@ -624,6 +703,7 @@ export default function Home() {
           chart={state === "thinking" ? null : chart}
           playKey={playKey}
           palmStatus={palmStatus}
+          armStatus={armProgress ? armStatusText("busy", armMock, armProgress) : null}
           soundPlaying={soundPlaying}
           armConnected={armConnected}
           lesson={state === "lesson" || state === "confirm" ? lessonView : null}
@@ -671,6 +751,18 @@ export default function Home() {
           <button type="submit">Send question</button>
         </form>
       )}
+      <ArmControls
+        state={armState}
+        mock={armMock}
+        supported={armSupported}
+        progress={armProgress}
+        log={armLog}
+        onConnect={() => { void connectArm(); }}
+        onDisconnect={() => { void disconnectArm(); focusSpaceBar(); }}
+        onStop={() => { void stopArm(); focusSpaceBar(); }}
+        onResume={() => { void resumeArm(); focusSpaceBar(); }}
+        onTraceBox={() => { void traceArmBox(); focusSpaceBar(); }}
+      />
       <BottomDock
         hidden={state === "listening"}
         canRepeat={state !== "thinking"}

@@ -348,3 +348,32 @@ html { font-size: calc(100% * var(--text-scale)); }
 .coach-tip { margin: 0; font-size: 1.1rem; padding: 0.6rem 0.9rem; border-radius: 14px; border: 1px solid var(--glass-border); }
 @media (prefers-reduced-motion: reduce) { .check { animation: none; } }
 .results-chart svg { max-width: 600px; margin: 0 auto; }
+
+/* Palm arm controls */
+.arm-controls {
+  position: fixed; top: 1rem; right: 1rem; z-index: 6; width: 17.5rem; display: grid; gap: 0.6rem;
+  padding: 0.9rem 1rem; border-radius: 20px; border: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: blur(26px); font-size: 1rem;
+}
+.arm-status { margin: 0; display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
+.arm-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #8a9399; flex: none; }
+.arm-dot-ready { background: #86ebda; }
+.arm-dot-busy { background: var(--amber); }
+.arm-dot-stopped { background: #ff8a7a; }
+.arm-dot-connecting { background: #9cc0ff; }
+.arm-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.arm-button {
+  font: inherit; font-weight: 700; color: #fff; cursor: pointer; min-height: 44px; padding: 0.4rem 0.8rem;
+  display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 999px;
+  border: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.06);
+}
+.arm-button:disabled { opacity: 0.45; cursor: default; }
+.arm-button:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.arm-stop:not(:disabled) { border-color: #ff8a7a; background: rgba(232, 101, 92, 0.3); }
+.arm-resume { border-color: #86ebda; background: rgba(15, 165, 149, 0.3); }
+.arm-note { margin: 0; font-size: 0.9rem; opacity: 0.85; }
+.arm-log summary { cursor: pointer; font-size: 0.9rem; }
+.arm-log ol { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; max-height: 9rem; overflow: auto; }
+@media (max-width: 1280px) {
+  .arm-controls { position: static; order: 4; width: min(100%, 52rem); }
+}

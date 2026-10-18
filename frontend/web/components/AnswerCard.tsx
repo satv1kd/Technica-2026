@@ -15,6 +15,8 @@ interface Props {
   palmStatus: PalmStatus;
   /** True while the chart is playing as sound. */
   soundPlaying?: boolean;
+  /** e.g. "Palm arm: drawing line 3 of 9" while the physical arm draws. */
+  armStatus?: string | null;
   armConnected: boolean;
   lesson: StepView | null;
   quiz: QuizView | null;
@@ -44,7 +46,7 @@ function palmLabel(status: PalmStatus, armConnected: boolean): string {
 /** The glass answer card: lesson header, the felt chart, caption, and quiz. */
 export function AnswerCard(p: Props) {
   const { lesson, quiz, chart } = p;
-  const status = p.soundPlaying ? "Playing chart as sound" : palmLabel(p.palmStatus, p.armConnected);
+  const status = p.armStatus ?? (p.soundPlaying ? "Playing chart as sound" : palmLabel(p.palmStatus, p.armConnected));
   return (
     <section className="answer-card" aria-label="Answer">
       {lesson && (
