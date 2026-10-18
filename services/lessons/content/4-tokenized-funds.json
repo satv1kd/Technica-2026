@@ -1,0 +1,46 @@
+{
+  "id": "pvoo",
+  "title": "Tokenized funds with PVOO",
+  "steps": [
+    {
+      "id": "pvoo-1",
+      "title": "What a token is",
+      "say": "A tokenized fund records your share on a blockchain instead of a broker's private database. PVOO is our practice token. One PVOO stands for one share of VOO."
+    },
+    {
+      "id": "pvoo-2",
+      "title": "Settlement speed",
+      "say": "A normal ETF trade settles the next business day. That's the long line. A token on Solana settles in about 2 seconds. That's the short line and the tap.",
+      "chart": { "series": [], "shape": "long-line-short-line-tap" },
+      "alt": "A long line, then a short line, then a tap."
+    },
+    {
+      "id": "pvoo-3",
+      "title": "Buy PVOO",
+      "say": "Done. That settled in {settle_s} seconds. Feel the tap.",
+      "action": [
+        { "tool": "propose_trade", "args": { "side": "buy", "symbol": "PVOO", "qty": 2 } },
+        { "tool": "confirm_trade", "args": { "proposal": "$last" } }
+      ],
+      "chart": { "series": [], "shape": "tap-center" }
+    },
+    {
+      "id": "pvoo-4",
+      "title": "Check the backing",
+      "say": "Anyone can check this. On chain there are {supply} PVOO, and our ledger says {ledger}. They match, so every token is backed.",
+      "data": [{ "tool": "check_token_backing", "args": {} }]
+    },
+    {
+      "id": "pvoo-5",
+      "title": "The risks",
+      "say": "Tokens still depend on trust. The issuer has to really hold the shares. Whoever holds the keys controls the tokens. In this app we hold your keys, like a bank would. And the rules for tokenized securities are still being written.",
+      "chart": { "series": [], "shape": "tap-center" }
+    }
+  ],
+  "quiz": {
+    "q": "If you lose your own wallet keys, can a bank reset them?",
+    "options": ["Yes, always", "No, the tokens are gone", "Only on weekdays"],
+    "answer": 1,
+    "why": "With self-custody there is no reset. Lose the keys and the tokens are gone."
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "options",
+  "title": "Options basics",
+  "stretch": true,
+  "steps": [
+    {
+      "id": "opt-1",
+      "title": "Buying a call",
+      "say": "The dashed line is zero. If the stock stays low, you lose only the 2 dollars you paid. Past the strike price, the line climbs. The tap marks break-even.",
+      "chart": { "series": [], "shape": "call-payoff" },
+      "alt": "A zero line, then a hockey stick that climbs, with a tap at break-even."
+    },
+    {
+      "id": "opt-2",
+      "title": "Buying a put",
+      "say": "A put is the mirror image. It gains value when the stock falls.",
+      "chart": { "series": [], "shape": "put-payoff" },
+      "alt": "A mirrored hockey stick."
+    },
+    {
+      "id": "opt-3",
+      "title": "Time works against you",
+      "say": "An option loses value as expiration gets closer, and it falls faster near the end. Most beginners lose money on options. This is paper money only.",
+      "chart": { "series": [], "shape": "decay" },
+      "alt": "A curve that falls faster toward the right."
+    }
+  ],
+  "quiz": {
+    "q": "You paid 2 dollars for a call. The stock crashed. What's the most you can lose?",
+    "options": ["2 dollars", "The whole stock price", "Unlimited"],
+    "answer": 0,
+    "why": "When you buy an option, the most you can lose is what you paid."
+  }
+}
