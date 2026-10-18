@@ -12,7 +12,7 @@ import { ADVICE_REQUEST, checkReply, dropUnverified, extractNumbers, type ToolLo
 
 describe("toSpeech", () => {
   it("matches the task's example exactly", () => {
-    expect(toSpeech("VOO is up 12%")).toBe("VOO is up about 12 percent. Remember, prices can fall as well as rise.".replace(". Remember", " Remember"));
+    expect(toSpeech("VOO is up 12%")).toBe("VOO is up about 12 percent. Remember, prices can fall as well as rise.");
   });
 
   it("strips markdown", () => {

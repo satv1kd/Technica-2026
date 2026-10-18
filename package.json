@@ -18,6 +18,7 @@
     "chain": "tsx --env-file-if-exists=.env backend/services/chain/server.ts",
     "chain:setup": "tsx --env-file-if-exists=.env backend/services/chain/setup.ts",
     "test:devnet": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/chain.devnet.test.ts",
+    "test:live": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run backend/tests/tutor/tutor.live.test.ts",
     "test:frontend": "vitest run frontend/tests/unit",
     "test:backend": "vitest run backend/tests"
   },
