@@ -41,8 +41,13 @@ export const NEXT_HINT = "Press N for the next step, or R to repeat.";
 export const QUIZ_HINT = "Press N for the quiz, or R to repeat.";
 export const UNAVAILABLE = "The current data is unavailable.";
 
-const money = (n: number) =>
-  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Narration is spoken verbatim, so write money the way the templates do
+// ("701.75 dollars"), never "$701.75".
+const money = (n: number) => {
+  const cents = Math.round(n * 100) % 100 !== 0;
+  const digits = cents ? 2 : 0;
+  return `${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })} dollars`;
+};
 const trim = (n: number) => String(Number(n.toFixed(6)));
 const spokenDate = (iso: string) =>
   new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
@@ -89,6 +94,11 @@ export function resolvePlaceholder(name: string, runs: ToolRun[]): string | unde
       return backing ? trim(backing.supply) : undefined;
     case "ledger":
       return backing ? trim(backing.ledger_onchain) : undefined;
+    case "backing_verdict":
+      if (!backing) return undefined;
+      return backing.matches
+        ? "They match, so every token is backed."
+        : "They don't match, so some tokens aren't backed. That's exactly what this check is for.";
     case "end_value":
       return backtest ? money(backtest.end_value) : undefined;
     case "return_pct":
